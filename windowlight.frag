@@ -6,94 +6,253 @@ uniform vec2 resolution;
 vec3 sun;
 float sunAlt;
 uniform float time;
-const int style = 1;
-const float plant = 1.0;
+const int style = 5;
+const int plantType = 2;
+const int mood = 3;
 
 const float D_WIN = 0.55;   // window plane distance from wall
 const float D_PLANT = 1.05; // plant distance from wall (outside the window)
 const float TILT = 0.55;    // window plane angle against the wall, radians
+const float PI = 3.14159265;
+const vec2 WC = vec2(0.15, 0.62);  // window opening centre, window-plane coords
+const vec2 WH = vec2(0.42, 0.55);  // window opening half-size
+const float FOLLOW = 0.8;
+const float ZOOM = 1.4;            // how much wall the screen shows (1 = one unit tall)          // how much the view pans to keep the patch framed
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
 float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
   return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
 float fbm(vec2 p){ float a=.5, s=0.; for(int i=0;i<4;i++){ s+=a*noise(p); p*=2.03; a*=.5; } return s; }
+mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }   // rot(a)*v projects v onto direction a
+float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa=p-a, ba=b-a; float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.); return length(pa-ba*h); }
 
-// window aperture in window-plane coords (q), 1 = open
+// ---------------- moods: wall paint, light tints, grading ----------------
+vec3 wallA; vec3 sunTint; vec3 shadeTint; vec3 nightTint;
+float mottle; float bumpAmt; float expo; float sat; float haze; float contrast; float ambAmt;
+void setMood(){
+  wallA = vec3(0.82,0.72,0.61); sunTint = vec3(1.0,0.95,0.87); shadeTint = vec3(0.82,0.86,1.0); nightTint = vec3(0.42,0.52,0.9);
+  mottle = 0.05; bumpAmt = 1.0; expo = 1.0; sat = 1.0; haze = 0.0; contrast = 1.0; ambAmt = 0.2;
+  if (mood == 1) {        // terracotta limewash
+    wallA = vec3(0.80,0.47,0.34); mottle = 0.22; bumpAmt = 1.3; sunTint = vec3(1.0,0.93,0.84); shadeTint = vec3(0.86,0.82,0.98);
+  } else if (mood == 2) { // sage
+    wallA = vec3(0.60,0.66,0.55); mottle = 0.08; shadeTint = vec3(0.80,0.90,1.0); sunTint = vec3(1.0,0.97,0.88);
+  } else if (mood == 3) { // nocturne: ink-blue wall, warm low key light
+    wallA = vec3(0.34,0.36,0.44); sunTint = vec3(1.0,0.74,0.48); shadeTint = vec3(0.55,0.68,1.0);
+    expo = 1.7; contrast = 1.1; ambAmt = 0.12; mottle = 0.07;
+  } else if (mood == 4) { // blush: pink plaster, hazy and soft
+    wallA = vec3(0.88,0.69,0.66); haze = 0.3; sunTint = vec3(1.0,0.9,0.86); shadeTint = vec3(0.98,0.86,0.98); contrast = 0.92;
+  } else if (mood == 5) { // concrete: cool grey, crisp, pitted
+    wallA = vec3(0.63,0.63,0.61); mottle = 0.14; bumpAmt = 2.4; sunTint = vec3(1.0,0.98,0.95); shadeTint = vec3(0.74,0.84,1.0); sat = 0.8;
+  } else if (mood == 6) { // overcast: the sun only just shows through cloud
+    wallA = vec3(0.76,0.74,0.70); haze = 1.0; sunTint = vec3(0.92,0.95,1.0); shadeTint = vec3(0.9,0.94,1.0); sat = 0.75; ambAmt = 0.3;
+  } else if (mood == 7) { // noir: black and white, hard contrast
+    wallA = vec3(0.72); sat = 0.0; contrast = 1.35; expo = 1.05; mottle = 0.06; ambAmt = 0.12;
+  }
+}
+
+// ---------------- window apertures (window-plane coords), 1 = open ----------------
+float inBox(vec2 l, vec2 h){ vec2 d = abs(l) - h; return step(max(d.x, d.y), 0.0); }
+float rail(float x, float w){ return step(w, abs(x)); }   // 0 on a bar of half-width w
+float sbox(vec2 l, vec2 h, float r){ vec2 a = smoothstep(-h-r, -h+r, l) * (1.0 - smoothstep(h-r, h+r, l)); return a.x*a.y; }
+
+float curtainT(vec2 l){   // sheer curtain over part of the window, transmittance
+  float edge = -0.02 + 0.05*sin(l.y*2.0 + time*0.35) + 0.03*sin(time*0.21);
+  float cov = smoothstep(edge-0.015, edge+0.015, l.x);
+  float folds = 0.5+0.5*sin(l.x*48.0 + 1.6*sin(l.y*2.3 + time*0.4) + time*0.25);
+  float folds2 = 0.5+0.5*sin(l.x*19.0 - time*0.17 + l.y*1.4);
+  float T = 0.18 + 0.42*folds*folds2 + 0.05*noise(l*vec2(40.0,3.0));
+  return mix(1.0, T, cov);
+}
+
 float aperture(vec2 q){
-  vec2 c = vec2(0.15, 0.62), h = vec2(0.42, 0.55);       // centre and half-size of the opening
-  vec2 d = abs(q - c) - h;
-  float open = step(max(d.x, d.y), 0.0);
-  vec2 l = q - c;
-  if (style == 0) {           // four-pane window: one mullion, one transom
-    open *= step(0.018, abs(l.x)) * step(0.018, abs(l.y - 0.1));
-  } else if (style == 1) {    // horizontal blinds, slightly tilted slats
-    float s = fract(l.y * 11.0 + l.x * 0.15);
-    open *= smoothstep(0.30, 0.36, s) * (1.0 - smoothstep(0.92, 0.98, s));
-  } else {                    // diamond lattice
+  vec2 l = q - WC;
+  l += (vec2(noise(q*6.0), noise(q*6.0+7.3)) - 0.5) * 0.007;   // old glass wobble
+  float o;
+  if (style == 4) {                      // arched window with fan muntins
+    float r = WH.x, sy = WH.y - r;
+    vec2 a = l - vec2(0.0, sy);
+    o = max(inBox(l - vec2(0.0, (sy - WH.y)*0.5), vec2(WH.x, (sy + WH.y)*0.5)), step(length(a), r)*step(0.0, a.y));
+    o *= rail(l.x, 0.014) * rail(l.y - sy, 0.014) * rail(l.y - (sy - WH.y)*0.5, 0.010);
+    float fan = rail(dot(a, vec2(-sin(0.8), cos(0.8))), 0.009) * rail(dot(a, vec2(-sin(2.34), cos(2.34))), 0.009) * rail(length(a) - r*0.38, 0.009);
+    o *= mix(1.0, fan, step(0.0, a.y));
+    return o;
+  }
+  o = inBox(l, WH);
+  if (style == 0) {                      // four-pane casement
+    o *= rail(l.x, 0.018) * rail(l.y - 0.1, 0.018);
+  } else if (style == 1) {               // venetian blinds, raised a little, with ladder cords
+    float s = fract(l.y*11.0 + l.x*0.15);
+    float slats = smoothstep(0.30, 0.36, s) * (1.0 - smoothstep(0.92, 0.98, s));
+    float bot = -WH.y + 0.17;
+    float cov = step(bot, l.y);
+    o *= mix(1.0, slats * rail(l.x + 0.22, 0.003) * rail(l.x - 0.24, 0.003), cov) * rail(l.y - bot, 0.012);
+  } else if (style == 2) {               // diamond lattice
     vec2 r = mat2(0.7071,-0.7071,0.7071,0.7071) * l * 9.0;
     vec2 g = abs(fract(r) - 0.5);
-    open *= step(0.07, min(g.x, g.y));
-    open *= step(0.02, abs(l.x)); // centre post
+    o *= step(0.07, min(g.x, g.y)) * rail(l.x, 0.02);
+  } else if (style == 3) {               // georgian six-over-six sash
+    o *= rail(l.y, 0.022) * rail(abs(l.x) - WH.x/3.0, 0.010) * rail(abs(l.y) - WH.y*0.5, 0.010);
+  } else if (style == 5) {               // plantation shutters, louvres half open
+    float s = fract(l.y*7.0 - l.x*0.05);
+    float louv = smoothstep(0.52, 0.58, s) * (1.0 - smoothstep(0.86, 0.92, s));
+    o *= louv * rail(l.x, 0.022) * rail(l.y + 0.06, 0.03) * rail(abs(l.x) - WH.x*0.5, 0.007);
+  } else {                               // casement with a sheer curtain drawn across part of it
+    o *= rail(l.x, 0.016) * rail(l.y - 0.25, 0.014) * curtainT(l);
   }
-  return open;
+  return o;
 }
 
-// leaf silhouettes in plant-plane coords, 1 = blocked
-float leaf(vec2 p, vec2 c, float ang, float sz){
-  vec2 d = p - c; float s = sin(ang), co = cos(ang);
-  d = mat2(co, -s, s, co) * d / sz;
-  float e = length(vec2(d.x * 1.0, d.y * 2.1)) - 0.5;            // ellipse
-  float notch = smoothstep(0.02, 0.0, abs(d.y) - 0.03) * step(0.0, d.x); // split down the middle
-  return step(e, 0.0) * (1.0 - notch * 0.9);
+// ---------------- plants (plant-plane coords), 1 = blocked ----------------
+float vesica(vec2 d){                    // pointed leaf from x=0 (stalk) to x=1 (tip)
+  float x = clamp(d.x, 0.0, 1.0);
+  float w = 0.17 * pow(sin(PI * pow(x, 0.8)), 0.9);
+  float inside = step(0.0, d.x) * step(d.x, 1.0) * step(abs(d.y), w);
+  float vein = 1.0 - step(abs(d.y), 0.011) * step(0.08, x) * step(x, 0.8);
+  return inside * vein;
 }
-float foliage(vec2 p){
-  float b = 0.0;
-  float sway = sin(time * 0.6) * 0.012 + sin(time * 1.7 + p.y * 3.0) * 0.004;
-  p.x += sway * (p.y - 0.0);
-  // stem
-  b = max(b, smoothstep(0.012, 0.004, abs(p.x - 0.42 - 0.06 * sin(p.y * 2.5))) * step(p.y, 1.15) * step(0.2, p.y));
-  for (int i = 0; i < 9; i++) {
-    float fi = float(i);
-    float y = 0.25 + fi * 0.11;
-    float side = mod(fi, 2.0) * 2.0 - 1.0;
-    vec2 c = vec2(0.42 + side * (0.13 + 0.05 * hash(vec2(fi, 1.0))), y);
-    float a = side * (0.5 + 0.3 * hash(vec2(fi, 2.0))) + sin(time * (0.9 + fi * 0.13) + fi) * 0.05;
-    b = max(b, leaf(p, c, a, 0.26 + 0.08 * hash(vec2(fi, 3.0))));
+float ficus(vec2 p){
+  p.x += (sin(time*0.6)*0.012 + sin(time*1.7 + p.y*3.0)*0.004) * p.y;
+  float b = step(abs(p.x - 0.42 - 0.06*sin(p.y*2.5)), 0.008) * step(p.y, 1.2) * step(0.1, p.y);
+  for (int i = 0; i < 10; i++) {
+    float fi = float(i), y = 0.22 + fi*0.1, side = mod(fi, 2.0)*2.0 - 1.0;
+    vec2 base = vec2(0.42 + 0.06*sin(y*2.5), y);
+    float th = PI*0.5 - side*(0.85 + 0.35*hash(vec2(fi, 2.0))) + sin(time*(0.9 + fi*0.13) + fi)*0.06;
+    b = max(b, vesica(rot(th)*(p - base) / (0.27 + 0.09*hash(vec2(fi, 3.0)))));
   }
   return b;
 }
+float monLeaf(vec2 p, vec2 base, float ang, float sz){
+  vec2 d = rot(ang)*(p - base)/sz;       // x along the leaf, y across
+  float x = d.x, ax = abs(d.y);
+  float body = step(length(vec2((x - 0.5)/0.52, d.y/0.47)), 1.0);
+  float notch = step(x, 0.12) * step(ax, (0.13 - x)*0.9);
+  float t = (x - 0.55*ax)*6.0;
+  float slit = step(0.2, ax) * step(abs(fract(t) - 0.5), 0.07 + 0.3*(ax - 0.2));
+  float g = fract(t + 0.5) - 0.5;
+  float hole = step(length(vec2((ax - 0.12)/0.04, g/0.13)), 1.0) * step(0.25, x) * step(x, 0.85);
+  return body * (1.0 - notch) * (1.0 - slit) * (1.0 - hole);
+}
+float monstera(vec2 p){
+  p.x += (sin(time*0.5)*0.01 + sin(time*1.3 + p.y*2.0)*0.003) * p.y;
+  vec2 root = vec2(0.42, -0.45);
+  float b = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec2 base = i==0 ? vec2(0.08, 0.78) : i==1 ? vec2(0.36, 0.98) : i==2 ? vec2(0.16, 0.36) : vec2(0.48, 0.5);
+    float ang = i==0 ? 2.35 : i==1 ? 0.95 : i==2 ? 3.45 : -0.15;
+    float sz = i==0 ? 0.42 : i==1 ? 0.4 : i==2 ? 0.36 : 0.4;
+    ang += sin(time*0.8 + fi*1.7)*0.035;
+    b = max(b, monLeaf(p, base, ang, sz));
+    b = max(b, step(sdSeg(p, root, base), 0.008));
+  }
+  return b;
+}
+float frond(vec2 p, vec2 base, float ang, float len, float curl){
+  vec2 d = rot(ang)*(p - base);
+  float u = d.x, v = d.y + curl*u*u;
+  float tu = clamp(u/len, 0.0, 1.0), inR = step(0.0, u) * step(u, len), av = abs(v);
+  float rach = step(av, 0.005*(1.0 - tu) + 0.0015) * inR;
+  float L = 0.24*pow(sin(PI*min(tu*1.08, 1.0)), 0.6) + 0.012;
+  float sp = 0.06;
+  float w = (u - av*0.8 - av*av*1.2)/sp + step(0.0, v)*0.5;
+  float fw = abs(fract(w) - 0.5)*sp;
+  float lf = step(fw, 0.017*(1.0 - av/L) + 0.003) * step(av, L) * inR;
+  return max(rach, lf);
+}
+float palm(vec2 p){
+  vec2 base = vec2(0.22, 1.42);
+  float s = sin(time*0.45)*0.03 + sin(time*1.1)*0.01;
+  float b = frond(p, base, -0.55 + s, 1.25, 0.32);
+  b = max(b, frond(p, base, -1.15 + s*0.8, 1.35, 0.2));
+  b = max(b, frond(p, base, -2.05 + s*1.2, 1.2, -0.25));
+  return b;
+}
+float olBranch(vec2 p, vec2 base, float ang, float len, float bend, float seed){
+  vec2 d = rot(ang)*(p - base);
+  float u = d.x, v = d.y - bend*u*u;
+  float b = step(abs(v), 0.0045*(1.0 - 0.6*u/len)) * step(0.0, u) * step(u, len);
+  float sp = 0.055, ci = floor(u/sp);
+  for (int k = -2; k <= 1; k++) {
+    float i = ci + float(k), uc = (i + 0.5)*sp;
+    float ok = step(0.0, uc) * step(uc, len);
+    float side = mod(i, 2.0)*2.0 - 1.0;
+    float a = side*(0.55 + 0.35*hash(vec2(i, seed))) + sin(time*1.1 + i*0.7 + seed)*0.08;
+    vec2 ld = rot(a)*vec2(u - uc, v);
+    float Ll = 0.12 + 0.035*hash(vec2(seed, i));
+    float x = ld.x/Ll;
+    b = max(b, ok * step(0.0, x) * step(x, 1.0) * step(abs(ld.y), 0.14*Ll*sin(PI*clamp(x, 0.0, 1.0))));
+  }
+  return b;
+}
+float olive(vec2 p){
+  float s = sin(time*0.4)*0.02;
+  float b = olBranch(p, vec2(-0.45, 1.45), -0.55 + s, 1.3, 0.12, 1.0);
+  b = max(b, olBranch(p, vec2(-0.4, 0.95), -0.18 + s*1.3, 1.05, 0.18, 2.0));
+  b = max(b, olBranch(p, vec2(1.0, 1.55), -2.45 - s, 0.95, -0.15, 3.0));
+  return b;
+}
+float foliage(vec2 p){
+  if (plantType == 1) return ficus(p);
+  if (plantType == 2) return monstera(p);
+  if (plantType == 3) return palm(p);
+  return olive(p);
+}
+vec3 leafTint(){                        // light that gets through a leaf (green, faint)
+  if (plantType == 4) return vec3(0.035, 0.042, 0.026);
+  if (plantType == 3) return vec3(0.03, 0.05, 0.014);
+  return vec3(0.025, 0.048, 0.012);
+}
 
-// soft sample: average over a disk to fake the penumbra
+// soft sample: average over a disk to fake the penumbra, rotated per pixel to hide banding
 float jit = 0.0;
 float softAperture(vec2 q, float r){
   float s = 0.0;
   for (int i = 0; i < 16; i++){
-    float a = float(i) * 2.39996 + jit; float rr = sqrt((float(i) + .5) / 16.0) * r;
-    s += aperture(q + rr * vec2(cos(a), sin(a)));
+    float a = float(i)*2.39996 + jit, rr = sqrt((float(i) + .5)/16.0)*r;
+    s += aperture(q + rr*vec2(cos(a), sin(a)));
   }
-  return s / 16.0;
+  return s/16.0;
 }
 float softFoliage(vec2 q, float r){
   float s = 0.0;
   for (int i = 0; i < 12; i++){
-    float a = float(i) * 2.39996 + jit; float rr = sqrt((float(i) + .5) / 12.0) * r;
-    s += foliage(q + rr * vec2(cos(a), sin(a)));
+    float a = float(i)*2.39996 + jit, rr = sqrt((float(i) + .5)/12.0)*r;
+    s += foliage(q + rr*vec2(cos(a), sin(a)));
   }
-  return s / 12.0;
+  return s/12.0;
 }
 
-vec3 sunColor(float alt){
-  float a = clamp(alt / 0.6, 0.0, 1.0);                  // 0 at horizon, 1 at ~35 deg
-  vec3 low = vec3(1.0, 0.55, 0.25), high = vec3(1.0, 0.93, 0.80);
-  return mix(low, high, smoothstep(0.0, 1.0, a));
+vec3 sunColor(float a){                 // linear colour of direct sun by altitude (radians)
+  float d = a*57.2958;
+  vec3 c0 = vec3(1.0, 0.30, 0.10), c1 = vec3(1.0, 0.56, 0.26), c2 = vec3(1.0, 0.82, 0.62), c3 = vec3(1.0, 0.94, 0.86);
+  if (d < 5.0) return mix(c0, c1, d/5.0);
+  if (d < 18.0) return mix(c1, c2, (d - 5.0)/13.0);
+  return mix(c2, c3, clamp((d - 18.0)/27.0, 0.0, 1.0));
 }
+
+float plaster(vec2 x){ return fbm(x*7.0)*0.55 + fbm(x*38.0)*0.3 + noise(x*170.0)*0.15; }
+
+float motes(vec2 uv){
+  float m = 0.0;
+  for (int k = 0; k < 2; k++){
+    float fk = float(k);
+    vec2 g = uv*(16.0 + fk*12.0) + vec2(time*0.06, -time*(0.03 + 0.02*fk)) + vec2(sin(time*0.3 + fk), cos(time*0.23))*0.5;
+    vec2 id = floor(g), f = fract(g);
+    float h = hash(id + fk*7.0);
+    vec2 c = vec2(hash(id + 1.3), hash(id + 2.7))*0.6 + 0.2 + 0.15*vec2(sin(time*0.7 + h*20.0), cos(time*0.6 + h*13.0));
+    m += step(0.86, h) * smoothstep(0.07, 0.0, length(f - c)) * (0.55 + 0.45*sin(time*1.7 + h*40.0));
+  }
+  return m;
+}
+
+vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
 
 
 // ---- sun position on the GPU (SunCalc formulas), angles baked at start ----
 const float RAD = 0.017453292519943295;
 const float E = RAD * 23.4397;
-const float M0 = 5.503783793;
-const float H0 = 3.329782515;
+const float M0 = 5.495519293;
+const float H0 = 0.302829434;
 const float PHI = 0.659210858;
 const float FACING = 3.141592654;
 const float SPEED = 1.000;
@@ -113,40 +272,75 @@ void computeSun(){
 }
 void main(){
   computeSun();
-  jit = hash(gl_FragCoord.xy) * 6.2831;
-  vec2 uv = gl_FragCoord.xy / res.y;                   // wall coords, height = 1
-  uv.x -= 0.5 * res.x / res.y;                          // centre x
-  // base wall: plaster with gentle grain and vignette
-  float grain = fbm(uv * 6.0) * 0.06 + noise(uv * 400.0) * 0.025;
-  vec3 wall = vec3(0.47, 0.38, 0.30) * (0.92 + grain);
-  float vig = 1.0 - 0.35 * length((gl_FragCoord.xy / res - 0.5) * vec2(1.1, 1.3));
+  setMood();
+  jit = hash(gl_FragCoord.xy)*6.2831;
+  vec2 sc = gl_FragCoord.xy / res;
+  vec2 uv = (gl_FragCoord.xy/res.y - vec2(0.5*res.x/res.y, 0.5))*ZOOM + vec2(0.0, 0.5);  // wall coords
 
-  // ambient sky light: dim blue at night, warm grey by day
-  float day = smoothstep(-0.12, 0.08, sunAlt);
-  vec3 amb = mix(vec3(0.18, 0.20, 0.30), vec3(0.62, 0.58, 0.55), day);
-  vec3 col = wall * amb * vig;
+  vec3 n = vec3(sin(TILT), 0.0, cos(TILT)), ua = vec3(cos(TILT), 0.0, -sin(TILT));
+  bool isSun = sunAlt > 0.0;
+  vec3 L = isSun ? sun : -sun;           // at night, a full-moon stand-in opposite the sun
+  float alt = abs(sunAlt), ns = dot(n, L);
 
-  // window plane is tilted against the wall (like a window in a side wall seen at an angle),
-  // which turns the patch into a skewed parallelogram instead of a flat rectangle
-  vec3 n = vec3(sin(TILT), 0.0, cos(TILT));
-  vec3 ua = vec3(cos(TILT), 0.0, -sin(TILT));
-  float ns = dot(n, sun);
-  if (ns > 0.03 && sunAlt > -0.02) {
+  // pan the view toward where the window's centre lands, so the light stays on screen
+  vec3 wc = WC.x*ua + vec3(0.0, WC.y, 0.0) + D_WIN*n;
+  vec2 pc = wc.xy - (wc.z/max(L.z, 0.12))*L.xy;
+  uv += clamp(pc - vec2(0.0, 0.5), vec2(-0.6, -0.45), vec2(0.6, 0.45)) * FOLLOW * smoothstep(0.0, 0.06, alt) * smoothstep(0.03, 0.12, ns);
+
+  // plaster: albedo with mottling, height for bump lighting
+  vec3 wall = pow(wallA, vec3(2.2));
+  float m = fbm(uv*2.2 + 5.0);
+  wall *= 1.0 + mottle*(m - 0.5)*2.4;
+  float h0 = plaster(uv), e = 0.0012;
+  vec2 grad = vec2(plaster(uv + vec2(e, 0.0)) - h0, plaster(uv + vec2(0.0, e)) - h0) / e;
+  vec3 nb = normalize(vec3(-grad*0.010*bumpAmt, 1.0));
+  wall *= 0.93 + 0.14*h0;
+
+  // ambient sky light: blue hour tint at twilight, dim blue at night, cool in shade by day
+  float day = smoothstep(-0.10, 0.06, sunAlt);
+  float twi = exp(-pow((sunAlt + 0.03)/0.07, 2.0));
+  vec3 amb = mix(0.04*mix(nightTint, vec3(0.6), 0.4), ambAmt*shadeTint, day) + twi*vec3(0.05, 0.03, 0.065)*ambAmt*5.0;
+  amb *= 0.72 + 0.5*smoothstep(-1.4, 1.2, uv.x);         // brighter toward the window side
+  vec3 col = wall * amb;
+
+  if (ns > 0.03 && L.z > 0.0) {
     vec3 p = vec3(uv, 0.0);
-    float tw = (D_WIN - dot(n, p)) / ns;     vec3 hw = p + tw * sun;
-    float tp = (D_PLANT - dot(n, p)) / ns;   vec3 hp = p + tp * sun;
-    vec2 q  = vec2(dot(ua, hw), hw.y);
-    vec2 qp = vec2(dot(ua, hp), hp.y);
-    float pen  = 0.006 + 0.004 * tw;           // penumbra grows with distance travelled from the opening
+    float tw = (D_WIN - dot(n, p))/ns;   vec3 hw = p + tw*L;
+    float tp = (D_PLANT - dot(n, p))/ns; vec3 hp = p + tp*L;
+    vec2 q = vec2(dot(ua, hw), hw.y), qp = vec2(dot(ua, hp), hp.y);
+    // keep the plant roughly in front of the window as the sun moves, so its shadow stays in the patch
+    vec3 pcw = vec3(pc, 0.0); vec3 hc = pcw + (D_PLANT - dot(n, pcw))/ns*L;
+    qp -= (vec2(dot(ua, hc), hc.y) - WC) * 0.8;
+    float hz = 1.0 + 7.0*haze;
+    float pen = (0.004 + 0.004*tw)*hz;   // penumbra grows with distance from the opening
     float lit = softAperture(q, pen);
-    if (plant > 0.5) lit *= 1.0 - 0.8 * softFoliage(qp, 0.006 + 0.012 * tp);
-    float inc = clamp(sun.z, 0.0, 1.0);        // grazing light on the wall is weaker
-    float strength = smoothstep(-0.02, 0.10, sunAlt) * (0.45 + 0.55 * inc);
-    vec3 sc = sunColor(sunAlt);
-    float glow = softAperture(q, pen * 10.0) * 0.22;
-    col += wall * sc * (lit * 1.05 + glow) * strength;
+    vec3 trans = vec3(1.0);
+    if (plantType > 0) {
+      float occ = softFoliage(qp, (0.003 + 0.006*tp)*hz);
+      trans = mix(vec3(1.0), leafTint(), occ*(0.95 - 0.45*haze));
+    }
+    float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
+    float strength = E * smoothstep(0.0, 0.08, alt);
+    vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
+    float flat_ = max(L.z, 0.0);
+    float bumpR = clamp(max(dot(nb, L), 0.0)/max(flat_, 0.05), 0.0, 3.0);
+    float shade = (0.4 + 0.6*flat_) * mix(1.0, bumpR, 0.75);
+    float edge = 4.0*lit*(1.0 - lit);    // warm fringe in the penumbra
+    vec3 fringe = mix(vec3(1.0), vec3(1.14, 0.88, 0.64), edge*0.55*(isSun ? 1.0 : 0.0)*(1.0 - haze));
+    vec2 lq = q - WC;
+    float halo = sbox(lq, WH, pen*6.0 + 0.03)*0.07 + sbox(lq, WH, 0.18 + 0.25*haze)*(0.05 + 0.08*haze);
+    vec3 direct = lc*strength*(lit*trans*fringe*shade + halo*(0.4 + 0.6*flat_)*vec3(1.0, 0.9, 0.8));
+    col += wall*direct;
+    col += wall*wall*lc*strength*0.06*(isSun ? 1.0 : 0.0);           // bounce: the room takes the wall colour
+    if (isSun) col += lc*strength*motes(uv)*lit*0.05*(1.0 - haze);   // dust catching the beam
   }
-  // gentle filmic curve
-  col = col / (col + 0.55) * 1.45;
-  gl_FragColor = vec4(pow(col, vec3(0.95)), 1.0);
+
+  float vig = 1.0 - 0.38*pow(length((sc - 0.5)*vec2(1.0, 1.2))*1.25, 2.0);
+  col *= vig*expo;
+  col = aces(col);
+  col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, sat);
+  col = pow(col, vec3(1.0/2.2));
+  col = clamp((col - 0.45)*contrast + 0.45, 0.0, 1.0);
+  col += (hash(gl_FragCoord.xy + 17.0) - 0.5)/255.0;                  // dither against banding
+  gl_FragColor = vec4(col, 1.0);
 }

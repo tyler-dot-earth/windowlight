@@ -2,13 +2,16 @@
 // glpaper only gives `time` (s since start) and `resolution`, so we bake the slow-moving
 // solar angles at start time in double precision and advance them linearly with `time`.
 // usage: node gen-glpaper.mjs [--lat 37.77] [--lon -122.42] [--facing 180] [--style blinds]
-//                             [--plant 1] [--at 2026-11-19T09:00] [--speed 1] > windowlight.frag
+//        [--plant ficus] [--mood linen] [--at 2026-11-19T09:00] [--speed 1] > windowlight.frag
 import fs from 'node:fs';
 const args = Object.fromEntries(process.argv.slice(2).join(' ').split('--').filter(Boolean)
   .map(s => s.trim().split(/\s+/)).map(([k, v]) => [k, v]));
 const lat = +(args.lat ?? 37.77), lon = +(args.lon ?? -122.42), facing = +(args.facing ?? 180);
-const style = { window: 0, blinds: 1, lattice: 2 }[args.style ?? 'blinds'];
-const plant = +(args.plant ?? 1), speed = +(args.speed ?? 1);
+const pick = (list, v, d) => { const i = list.indexOf(v ?? d); if (i < 0) throw new Error(`unknown ${v}, pick one of ${list.join(' ')}`); return i; };
+const style = pick(['window', 'blinds', 'lattice', 'georgian', 'arch', 'shutters', 'sheer'], args.style, 'blinds');
+const plantType = pick(['none', 'ficus', 'monstera', 'palm', 'olive'], args.plant, 'ficus');
+const mood = pick(['linen', 'terracotta', 'sage', 'nocturne', 'blush', 'concrete', 'overcast', 'noir'], args.mood, 'linen');
+const speed = +(args.speed ?? 1);
 const start = args.at ? new Date(args.at) : new Date();
 
 const rad = Math.PI / 180, TAU = 2 * Math.PI;
@@ -24,7 +27,8 @@ fs_ = fs_
   .replace(/uniform vec3 sun;.*\n/, 'vec3 sun;\n')
   .replace(/uniform float sunAlt;.*\n/, 'float sunAlt;\n')
   .replace(/uniform int style;.*\n/, `const int style = ${style};\n`)
-  .replace(/uniform float plant;\n/, `const float plant = ${plant.toFixed(1)};\n`);
+  .replace(/uniform int plantType;.*\n/, `const int plantType = ${plantType};\n`)
+  .replace(/uniform int mood;.*\n/, `const int mood = ${mood};\n`);
 
 const sunGlsl = `
 // ---- sun position on the GPU (SunCalc formulas), angles baked at start ----
