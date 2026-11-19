@@ -1,0 +1,251 @@
+<!doctype html>
+<!--
+  windowlight spike: sunlight through a window onto a wall, following the real sun.
+  URL params:
+    lat, lon      location (default 37.77, -122.42, a Pacific-time stand-in)
+    facing        compass direction the window faces, degrees (default 180 = south)
+    style         window | blinds | lattice (default blinds)
+    plant         1 | 0 (leaf shadows from a plant outside, default 1)
+    t             fixed time, ISO like 2026-11-19T08:30 (local), default now
+    speed         time-lapse multiplier (e.g. 3600 = one hour per second)
+    ui            1 shows a time slider and readout
+    still         1 renders one frame and stops (for screenshots)
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>windowlight</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #2a221c; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #ui { position: fixed; right: 24px; top: 24px; width: 320px; padding: 14px 16px;
+        background: rgba(20,16,12,.72); color: #f3e7d6; font: 13px/1.4 system-ui, sans-serif;
+        border-radius: 14px; backdrop-filter: blur(10px); display: none; }
+  #ui input[type=range] { width: 100%; }
+  #ui select { background: #2a221c; color: #f3e7d6; border: 1px solid #5a4a3a; border-radius: 6px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="readout">…</div>
+  <input id="slider" type="range" min="0" max="1439" step="1">
+  <div>style <select id="style"><option>blinds</option><option>window</option><option>lattice</option></select>
+       <label><input id="plant" type="checkbox" checked> plant</label>
+       <label><input id="live" type="checkbox" checked> live</label></div>
+</div>
+<script>
+// ---------- sun position (SunCalc formulas, Vladimir Agafonkin, BSD) ----------
+const rad = Math.PI / 180, dayMs = 86400000, J1970 = 2440588, J2000 = 2451545, e = rad * 23.4397;
+const toDays = d => d.valueOf() / dayMs - 0.5 + J1970 - J2000;
+const rightAscension = (l, b) => Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
+const declination = (l, b) => Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
+function sunPosition(date, lat, lng) {
+  const lw = rad * -lng, phi = rad * lat, d = toDays(date);
+  const M = rad * (357.5291 + 0.98560028 * d);
+  const C = rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+  const L = M + C + rad * 102.9372 + Math.PI;
+  const dec = declination(L, 0), ra = rightAscension(L, 0);
+  const H = rad * (280.16 + 360.9856235 * d) - lw - ra;
+  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi)); // from south, westward
+  const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+  return { alt, az: az + Math.PI }; // az now compass bearing from north, clockwise
+}
+
+// ---------- params ----------
+const P = new URLSearchParams(location.search);
+const num = (k, d) => P.has(k) ? parseFloat(P.get(k)) : d;
+const cfg = {
+  lat: num('lat', 37.77), lon: num('lon', -122.42), facing: num('facing', 180),
+  style: P.get('style') || 'blinds', plant: P.get('plant') !== '0',
+  speed: num('speed', 1), still: P.get('still') === '1',
+};
+const t0 = P.has('t') ? new Date(P.get('t')).getTime() : Date.now();
+const wall0 = performance.now();
+
+// ---------- GL ----------
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl', { antialias: false, preserveDrawingBuffer: true });
+const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
+const fs = `
+precision highp float;
+uniform vec2 res;
+uniform vec3 sun;      // direction toward sun in room frame: x along wall (right), y up, z out through window
+uniform float sunAlt;  // radians
+uniform float time;
+uniform int style;     // 0 window, 1 blinds, 2 lattice
+uniform float plant;
+
+const float D_WIN = 0.55;   // window plane distance from wall
+const float D_PLANT = 1.05; // plant distance from wall (outside the window)
+const float TILT = 0.55;    // window plane angle against the wall, radians
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
+float fbm(vec2 p){ float a=.5, s=0.; for(int i=0;i<4;i++){ s+=a*noise(p); p*=2.03; a*=.5; } return s; }
+
+// window aperture in window-plane coords (q), 1 = open
+float aperture(vec2 q){
+  vec2 c = vec2(0.15, 0.62), h = vec2(0.42, 0.55);       // centre and half-size of the opening
+  vec2 d = abs(q - c) - h;
+  float open = step(max(d.x, d.y), 0.0);
+  vec2 l = q - c;
+  if (style == 0) {           // four-pane window: one mullion, one transom
+    open *= step(0.018, abs(l.x)) * step(0.018, abs(l.y - 0.1));
+  } else if (style == 1) {    // horizontal blinds, slightly tilted slats
+    float s = fract(l.y * 11.0 + l.x * 0.15);
+    open *= smoothstep(0.30, 0.36, s) * (1.0 - smoothstep(0.92, 0.98, s));
+  } else {                    // diamond lattice
+    vec2 r = mat2(0.7071,-0.7071,0.7071,0.7071) * l * 9.0;
+    vec2 g = abs(fract(r) - 0.5);
+    open *= step(0.07, min(g.x, g.y));
+    open *= step(0.02, abs(l.x)); // centre post
+  }
+  return open;
+}
+
+// leaf silhouettes in plant-plane coords, 1 = blocked
+float leaf(vec2 p, vec2 c, float ang, float sz){
+  vec2 d = p - c; float s = sin(ang), co = cos(ang);
+  d = mat2(co, -s, s, co) * d / sz;
+  float e = length(vec2(d.x * 1.0, d.y * 2.1)) - 0.5;            // ellipse
+  float notch = smoothstep(0.02, 0.0, abs(d.y) - 0.03) * step(0.0, d.x); // split down the middle
+  return step(e, 0.0) * (1.0 - notch * 0.9);
+}
+float foliage(vec2 p){
+  float b = 0.0;
+  float sway = sin(time * 0.6) * 0.012 + sin(time * 1.7 + p.y * 3.0) * 0.004;
+  p.x += sway * (p.y - 0.0);
+  // stem
+  b = max(b, smoothstep(0.012, 0.004, abs(p.x - 0.42 - 0.06 * sin(p.y * 2.5))) * step(p.y, 1.15) * step(0.2, p.y));
+  for (int i = 0; i < 9; i++) {
+    float fi = float(i);
+    float y = 0.25 + fi * 0.11;
+    float side = mod(fi, 2.0) * 2.0 - 1.0;
+    vec2 c = vec2(0.42 + side * (0.13 + 0.05 * hash(vec2(fi, 1.0))), y);
+    float a = side * (0.5 + 0.3 * hash(vec2(fi, 2.0))) + sin(time * (0.9 + fi * 0.13) + fi) * 0.05;
+    b = max(b, leaf(p, c, a, 0.26 + 0.08 * hash(vec2(fi, 3.0))));
+  }
+  return b;
+}
+
+// soft sample: average over a disk to fake the penumbra
+float jit = 0.0;
+float softAperture(vec2 q, float r){
+  float s = 0.0;
+  for (int i = 0; i < 16; i++){
+    float a = float(i) * 2.39996 + jit; float rr = sqrt((float(i) + .5) / 16.0) * r;
+    s += aperture(q + rr * vec2(cos(a), sin(a)));
+  }
+  return s / 16.0;
+}
+float softFoliage(vec2 q, float r){
+  float s = 0.0;
+  for (int i = 0; i < 12; i++){
+    float a = float(i) * 2.39996 + jit; float rr = sqrt((float(i) + .5) / 12.0) * r;
+    s += foliage(q + rr * vec2(cos(a), sin(a)));
+  }
+  return s / 12.0;
+}
+
+vec3 sunColor(float alt){
+  float a = clamp(alt / 0.6, 0.0, 1.0);                  // 0 at horizon, 1 at ~35 deg
+  vec3 low = vec3(1.0, 0.55, 0.25), high = vec3(1.0, 0.93, 0.80);
+  return mix(low, high, smoothstep(0.0, 1.0, a));
+}
+
+void main(){
+  jit = hash(gl_FragCoord.xy) * 6.2831;
+  vec2 uv = gl_FragCoord.xy / res.y;                   // wall coords, height = 1
+  uv.x -= 0.5 * res.x / res.y;                          // centre x
+  // base wall: plaster with gentle grain and vignette
+  float grain = fbm(uv * 6.0) * 0.06 + noise(uv * 400.0) * 0.025;
+  vec3 wall = vec3(0.47, 0.38, 0.30) * (0.92 + grain);
+  float vig = 1.0 - 0.35 * length((gl_FragCoord.xy / res - 0.5) * vec2(1.1, 1.3));
+
+  // ambient sky light: dim blue at night, warm grey by day
+  float day = smoothstep(-0.12, 0.08, sunAlt);
+  vec3 amb = mix(vec3(0.18, 0.20, 0.30), vec3(0.62, 0.58, 0.55), day);
+  vec3 col = wall * amb * vig;
+
+  // window plane is tilted against the wall (like a window in a side wall seen at an angle),
+  // which turns the patch into a skewed parallelogram instead of a flat rectangle
+  vec3 n = vec3(sin(TILT), 0.0, cos(TILT));
+  vec3 ua = vec3(cos(TILT), 0.0, -sin(TILT));
+  float ns = dot(n, sun);
+  if (ns > 0.03 && sunAlt > -0.02) {
+    vec3 p = vec3(uv, 0.0);
+    float tw = (D_WIN - dot(n, p)) / ns;     vec3 hw = p + tw * sun;
+    float tp = (D_PLANT - dot(n, p)) / ns;   vec3 hp = p + tp * sun;
+    vec2 q  = vec2(dot(ua, hw), hw.y);
+    vec2 qp = vec2(dot(ua, hp), hp.y);
+    float pen  = 0.006 + 0.004 * tw;           // penumbra grows with distance travelled from the opening
+    float lit = softAperture(q, pen);
+    if (plant > 0.5) lit *= 1.0 - 0.8 * softFoliage(qp, 0.006 + 0.012 * tp);
+    float inc = clamp(sun.z, 0.0, 1.0);        // grazing light on the wall is weaker
+    float strength = smoothstep(-0.02, 0.10, sunAlt) * (0.45 + 0.55 * inc);
+    vec3 sc = sunColor(sunAlt);
+    float glow = softAperture(q, pen * 10.0) * 0.22;
+    col += wall * sc * (lit * 1.05 + glow) * strength;
+  }
+  // gentle filmic curve
+  col = col / (col + 0.55) * 1.45;
+  gl_FragColor = vec4(pow(col, vec3(0.95)), 1.0);
+}`;
+function sh(type, src){ const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { document.title = 'SHADER ERROR'; throw gl.getShaderInfoLog(s); } return s; }
+const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(pr); gl.useProgram(pr);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+const U = n => gl.getUniformLocation(pr, n);
+
+// ---------- ui ----------
+const ui = document.getElementById('ui'), slider = document.getElementById('slider'), readout = document.getElementById('readout');
+const styleSel = document.getElementById('style'), plantCb = document.getElementById('plant'), liveCb = document.getElementById('live');
+if (P.get('ui') === '1') ui.style.display = 'block';
+styleSel.value = cfg.style; plantCb.checked = cfg.plant;
+styleSel.onchange = () => cfg.style = styleSel.value; plantCb.onchange = () => cfg.plant = plantCb.checked;
+let manual = null;
+slider.oninput = () => { liveCb.checked = false; const d = new Date(now()); d.setHours(0, +slider.value, 0, 0); manual = d.getTime(); };
+liveCb.onchange = () => { if (liveCb.checked) manual = null; };
+const now = () => manual ?? (t0 + (performance.now() - wall0) * cfg.speed);
+
+// ---------- frame ----------
+window.__frames = 0;
+function frame(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.floor(cv.clientWidth * dpr), h = Math.floor(cv.clientHeight * dpr);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  gl.viewport(0, 0, w, h);
+  const t = now(), date = new Date(t);
+  const { alt, az } = sunPosition(date, cfg.lat, cfg.lon);
+  // world sun vector (east, north, up) -> room frame. window normal points along `facing`.
+  const f = cfg.facing * rad, rel = az - f;            // sun bearing relative to window normal
+  const sx = Math.cos(alt) * Math.sin(rel);            // to the right as you look out... flipped below
+  const sz = Math.cos(alt) * Math.cos(rel);
+  const sy = Math.sin(alt);
+  // standing inside facing the wall that receives light (window behind you), "right" on that wall = -sx
+  gl.uniform2f(U('res'), w, h);
+  gl.uniform3f(U('sun'), -sx, sy, sz);
+  gl.uniform1f(U('sunAlt'), alt);
+  gl.uniform1f(U('time'), performance.now() / 1000);
+  gl.uniform1i(U('style'), { window: 0, blinds: 1, lattice: 2 }[cfg.style] ?? 1);
+  gl.uniform1f(U('plant'), cfg.plant ? 1 : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  window.__frames++;
+  if (ui.style.display === 'block') {
+    if (manual === null) slider.value = date.getHours() * 60 + date.getMinutes();
+    readout.textContent = `${date.toLocaleString()} · sun alt ${(alt / rad).toFixed(1)}° az ${(az / rad).toFixed(0)}° · facing ${cfg.facing}°`;
+  }
+  window.__state = { iso: date.toISOString(), alt: alt / rad, az: az / rad };
+  if (P.has('bench')) return;
+  if (!cfg.still) requestAnimationFrame(frame);
+}
+frame();
+if (P.has('bench')) { const n = +P.get('bench'); const a = performance.now(); for (let i = 0; i < n; i++) { frame(); gl.finish(); gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4)); } document.title = 'ms/frame ' + ((performance.now() - a) / n).toFixed(2) + ' @ ' + cv.width + 'x' + cv.height + ' ' + gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info')?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER); }
+</script>
+</body>
+</html>
