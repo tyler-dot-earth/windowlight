@@ -11,6 +11,8 @@
     speed         time-lapse multiplier (e.g. 3600 = one hour per second)
     ui            1 shows a time slider and pickers
     still         1 renders one frame and stops (for screenshots)
+    tilt          angle of the window against the wall, degrees (default 32; 0 = facing the wall)
+    caustic       none | pool | glass | both   (pool water reflections, a water glass on the sill)
     anim          seconds of animation time to use for a still (wind, curtain, motes)
 -->
 <html>
@@ -32,7 +34,7 @@
 <div id="ui">
   <div id="readout">…</div>
   <input id="slider" type="range" min="0" max="1439" step="1">
-  <div><select id="style"></select> <select id="plant"></select> <select id="mood"></select>
+  <div><select id="style"></select> <select id="plant"></select> <select id="mood"></select> <select id="caustic"></select>
        <label><input id="live" type="checkbox" checked> live</label></div>
 </div>
 <script>
@@ -56,6 +58,7 @@ function sunPosition(date, lat, lng) {
 // ---------- params ----------
 const STYLES = ['window', 'blinds', 'lattice', 'georgian', 'arch', 'shutters', 'sheer'];
 const PLANTS = ['none', 'ficus', 'monstera', 'palm', 'olive'];
+const CAUSTICS = ['none', 'pool', 'glass', 'both'];
 const MOODS = ['linen', 'terracotta', 'sage', 'nocturne', 'blush', 'concrete', 'overcast', 'noir'];
 const P = new URLSearchParams(location.search);
 const num = (k, d) => P.has(k) ? parseFloat(P.get(k)) : d;
@@ -63,7 +66,7 @@ const plantParam = P.get('plant') === '0' ? 'none' : P.get('plant') === '1' ? 'f
 const cfg = {
   lat: num('lat', 37.77), lon: num('lon', -122.42), facing: num('facing', 180),
   style: P.get('style') || 'blinds', plant: plantParam || 'ficus', mood: P.get('mood') || 'linen',
-  speed: num('speed', 1), still: P.get('still') === '1', anim: num('anim', 0),
+  speed: num('speed', 1), tilt: num('tilt', 32), caustic: P.get('caustic') || 'none', still: P.get('still') === '1', anim: num('anim', 0),
 };
 const t0 = P.has('t') ? new Date(P.get('t')).getTime() : Date.now();
 const wall0 = performance.now();
@@ -84,7 +87,10 @@ uniform int mood;      // 0 linen 1 terracotta 2 sage 3 nocturne 4 blush 5 concr
 
 const float D_WIN = 0.55;   // window plane distance from wall
 const float D_PLANT = 1.05; // plant distance from wall (outside the window)
-const float TILT = 0.55;    // window plane angle against the wall, radians
+uniform float tilt;         // window plane angle against the wall, radians
+uniform int caustic;        // 0 none 1 pool 2 glass 3 both
+const float D_BACK = 2.1;   // a second, farther layer of leaves: blurrier shadows
+const float Y_WATER = -0.9; // pool surface height, below the window
 const float PI = 3.14159265;
 const vec2 WC = vec2(0.15, 0.62);  // window opening centre, window-plane coords
 const vec2 WH = vec2(0.42, 0.55);  // window opening half-size
@@ -294,6 +300,69 @@ float softFoliage(vec2 q, float r){
   return s/12.0;
 }
 
+// far layer: the same plant mirrored and shifted, so its blurrier shadow doesn't repeat the near one
+float softFoliageB(vec2 q, float r){
+  float s = 0.0;
+  for (int i = 0; i < 8; i++){
+    float a = float(i)*2.39996 + jit, rr = sqrt((float(i) + .5)/8.0)*r;
+    vec2 pp = q + rr*vec2(cos(a), sin(a));
+    s += foliage(vec2(0.95 - pp.x, pp.y)*0.9 + vec2(0.0, 0.12));
+  }
+  return s/8.0;
+}
+
+// ---------------- caustics ----------------
+float vor(vec2 p, float t){             // distance between the two nearest moving cells: 0 on cell borders
+  vec2 i = floor(p), f = fract(p);
+  float d1 = 8.0, d2 = 8.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(float(x), float(y));
+    vec2 h = vec2(hash(i + g), hash(i + g + 19.7));
+    vec2 o = 0.5 + 0.42*sin(t*(0.6 + 0.5*h) + 6.2831*h);
+    float d = length(g + o - f);
+    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+  }
+  return d2 - d1;
+}
+float poolCaustic(vec2 w, float blur){  // bright wavy network from a rippling pool surface, w in water-plane coords
+  float t = time;
+  w += 0.75*vec2(noise(w*0.55 + t*0.1), noise(w*0.55 - t*0.09 + 4.0)) - 0.375
+     + 0.3*vec2(noise(w*1.7 - t*0.22), noise(w*1.7 + 9.0 + t*0.19)) - 0.15;   // curve the cell borders
+  float a = vor(w*1.25, t*0.8), b = vor(w*1.8 + 7.0, t*1.05);
+  float lw = 0.045 + blur;
+  float la = exp(-a*a/(lw*lw)), lb = exp(-b*b/(lw*lw*1.6));
+  float bright = 0.45 + 1.1*noise(w*0.8 + t*0.13);                 // some strands brighter than others
+  return (0.75*la + 0.45*lb + 1.6*la*lb) * bright * (0.055/lw);    // knots where strands cross
+}
+// a round glass carafe of water on the sill: soft shadow, dark refracting rim,
+// a focused bright spot with a rainbow fringe, and a bright arc at its foot. l in window-plane coords from WC
+vec3 carafe(vec2 l, float pen){
+  vec2 v = l - vec2(0.2, -WH.y + 0.105);
+  float body = length(v) - 0.1;
+  vec2 nq = v - vec2(0.0, 0.16);
+  float neckW = 0.026 + 0.03*smoothstep(0.0, -0.09, nq.y) + 0.008*smoothstep(0.07, 0.085, nq.y);
+  float neck = max(abs(nq.x) - neckW, abs(nq.y) - 0.09);
+  float sd = min(body, neck);
+  sd = max(sd, -0.098 - v.y);           // flat base
+  float w = pen + 0.002;
+  float inside = 1.0 - smoothstep(-w, w, sd);
+  if (inside <= 0.0) return vec3(1.0);
+  float water = 1.0 - smoothstep(0.028 - w, 0.028 + w, v.y);
+  float ring = smoothstep(-0.045, -0.008, sd);           // edge refracts light away
+  float streak = 0.5 + 0.5*sin(v.x*90.0 + 6.0*sin(v.y*30.0));
+  vec3 T = vec3(mix(0.26, 0.17, water)) * (1.0 - 0.85*ring) * (0.75 + 0.5*streak*(1.0 - ring));
+  vec3 spot = vec3(0.0);
+  for (int k = 0; k < 3; k++) {                          // focus, slightly different size per colour
+    float r = 0.026*(1.0 + 0.3*float(k - 1));
+    float d = length((v - vec2(0.004, -0.024))*vec2(1.35, 0.6));
+    float s = 1.0 - smoothstep(r - w*1.5, r + w*1.5, d);
+    if (k == 0) spot.r = s; else if (k == 1) spot.g = s; else spot.b = s;
+  }
+  float arc = exp(-pow((length(v - vec2(0.0, 0.05)) - 0.115)/(0.006 + w), 2.0)) * smoothstep(-0.02, -0.07, v.y) * step(sd, 0.0);
+  T += water*(spot*vec3(3.4, 3.2, 3.0) + arc*2.2*vec3(1.0, 0.95, 0.85));
+  return mix(vec3(1.0), T, inside);
+}
+
 vec3 sunColor(float a){                 // linear colour of direct sun by altitude (radians)
   float d = a*57.2958;
   vec3 c0 = vec3(1.0, 0.30, 0.10), c1 = vec3(1.0, 0.56, 0.26), c2 = vec3(1.0, 0.82, 0.62), c3 = vec3(1.0, 0.94, 0.86);
@@ -323,9 +392,10 @@ void main(){
   setMood();
   jit = hash(gl_FragCoord.xy)*6.2831;
   vec2 sc = gl_FragCoord.xy / res;
-  vec2 uv = (gl_FragCoord.xy/res.y - vec2(0.5*res.x/res.y, 0.5))*ZOOM + vec2(0.0, 0.5);  // wall coords
+  bool pool = caustic == 1 || caustic == 3;
+  vec2 uv = (gl_FragCoord.xy/res.y - vec2(0.5*res.x/res.y, 0.5))*(pool ? 1.9 : ZOOM) + vec2(0.0, 0.5);  // wall coords; pool needs room for its reflection
 
-  vec3 n = vec3(sin(TILT), 0.0, cos(TILT)), ua = vec3(cos(TILT), 0.0, -sin(TILT));
+  vec3 n = vec3(sin(tilt), 0.0, cos(tilt)), ua = vec3(cos(tilt), 0.0, -sin(tilt));
   bool isSun = sunAlt > 0.0;
   vec3 L = isSun ? sun : -sun;           // at night, a full-moon stand-in opposite the sun
   float alt = abs(sunAlt), ns = dot(n, L);
@@ -333,7 +403,9 @@ void main(){
   // pan the view toward where the window's centre lands, so the light stays on screen
   vec3 wc = WC.x*ua + vec3(0.0, WC.y, 0.0) + D_WIN*n;
   vec2 pc = wc.xy - (wc.z/max(L.z, 0.12))*L.xy;
-  uv += clamp(pc - vec2(0.0, 0.5), vec2(-0.6, -0.45), vec2(0.6, 0.45)) * FOLLOW * smoothstep(0.0, 0.06, alt) * smoothstep(0.03, 0.12, ns);
+  vec2 pcR = wc.xy - (wc.z/max(L.z, 0.12))*vec2(L.x, -L.y);   // where the pool reflection lands
+  vec2 aim = pool && sunAlt > 0.0 ? mix(pc, pcR, 0.5) : pc;
+  uv += clamp(aim - vec2(0.0, 0.5), vec2(-0.6, -0.45), vec2(0.6, pool ? 0.9 : 0.45)) * FOLLOW * smoothstep(0.0, 0.06, alt) * smoothstep(0.03, 0.12, ns);
 
   // plaster: albedo with mottling, height for bump lighting
   vec3 wall = pow(wallA, vec3(2.2));
@@ -366,7 +438,13 @@ void main(){
     if (plantType > 0) {
       float occ = softFoliage(qp, (0.003 + 0.006*tp)*hz);
       trans = mix(vec3(1.0), leafTint(), occ*(0.95 - 0.45*haze));
+      float tb = (D_BACK - dot(n, p))/ns; vec3 hb = p + tb*L;
+      vec3 hcb = pcw + (D_BACK - dot(n, pcw))/ns*L;
+      vec2 qb = vec2(dot(ua, hb), hb.y) - (vec2(dot(ua, hcb), hcb.y) - WC)*0.8;
+      float occB = softFoliageB(qb, (0.004 + 0.007*tb)*hz);
+      trans *= mix(vec3(1.0), leafTint(), occB*0.8*(0.95 - 0.45*haze));
     }
+    if (caustic >= 2) trans *= carafe(q - WC, pen);
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
     float strength = E * smoothstep(0.0, 0.08, alt);
     vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
@@ -381,6 +459,20 @@ void main(){
     col += wall*direct;
     col += wall*wall*lc*strength*0.06*(isSun ? 1.0 : 0.0);           // bounce: the room takes the wall colour
     if (isSun) col += lc*strength*motes(uv)*lit*0.05*(1.0 - haze);   // dust catching the beam
+
+    // pool below the window: sun bounces up off the water, back in through the window, higher on the wall.
+    // the reflected ray mirrors the sun's height, so it crosses the window plane at the same distance.
+    if (isSun && pool) {
+      vec3 Lr = vec3(L.x, -L.y, L.z);
+      vec3 hr = p + tw*Lr;
+      vec3 wp = hr + max(hr.y - Y_WATER, 0.0)/max(L.y, 0.03)*Lr;   // where that ray meets the water
+      vec2 wq = wp.xz*3.0;
+      vec2 wob = (vec2(noise(wq*0.5 + vec2(time*0.3, 0.0)), noise(wq*0.5 + vec2(3.7, time*0.27))) - 0.5)*0.06;
+      float litR = softAperture(vec2(dot(ua, hr), hr.y) + wob, pen*1.4 + 0.006);
+      float blur = 0.012*(tw + length(wp - hr))*hz;
+      float fres = 0.22 + 0.4*pow(1.0 - sin(alt), 3.0);   // water reflects more at a low sun
+      col += wall*lc*strength*litR*fres*(0.2 + 1.5*poolCaustic(wq, blur))*vec3(0.94, 1.0, 1.02)*(1.0 - 0.7*haze);
+    }
   }
 
   float vig = 1.0 - 0.38*pow(length((sc - 0.5)*vec2(1.0, 1.2))*1.25, 2.0);
@@ -405,7 +497,7 @@ const U = n => gl.getUniformLocation(pr, n);
 const ui = document.getElementById('ui'), slider = document.getElementById('slider'), readout = document.getElementById('readout');
 const liveCb = document.getElementById('live');
 if (P.get('ui') === '1') ui.style.display = 'block';
-for (const [id, list] of [['style', STYLES], ['plant', PLANTS], ['mood', MOODS]]) {
+for (const [id, list] of [['style', STYLES], ['plant', PLANTS], ['mood', MOODS], ['caustic', CAUSTICS]]) {
   const sel = document.getElementById(id);
   sel.innerHTML = list.map(v => `<option>${v}</option>`).join('');
   sel.value = cfg[id]; sel.onchange = () => cfg[id] = sel.value;
@@ -434,6 +526,8 @@ function frame(){
   gl.uniform1i(U('style'), idx(STYLES, cfg.style));
   gl.uniform1i(U('plantType'), idx(PLANTS, cfg.plant));
   gl.uniform1i(U('mood'), idx(MOODS, cfg.mood));
+  gl.uniform1i(U('caustic'), idx(CAUSTICS, cfg.caustic));
+  gl.uniform1f(U('tilt'), cfg.tilt * rad);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   window.__frames++;
   if (ui.style.display === 'block') {
