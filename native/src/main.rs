@@ -20,7 +20,7 @@ use std::time::Instant;
 
 fn usage() -> ! {
     eprintln!("usage: windowlight run|shot OUT.png|sample N DIR|bench|ctl WORDS...\n\
-  look:   --style S --plant P --tree T --mood M --caustic C --tilt DEG --facing DEG --rain on|off --prism on|off --lamp L --material M --random\n\
+  look:   --style S --plant P --tree T --mood M --caustic C --tilt DEG --facing DEG --rain on|off --prism on|off --life on|off --lamp L --material M --random\n\
   place:  --lat X --lon Y (else the place picked on the page) --season auto|spring|summer|autumn|winter\n\
   time:   --at 2026-11-19T11:00 --speed X --anim SECONDS\n\
   live:   --output NAME (default: first) --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n          --pool all|favourites|historic --cat 10m|off --passing 4m|off --breeze on|off --ui 7417|off\n\

@@ -28,7 +28,7 @@ pub struct Frame {
     pub time: f32, pub style: i32, pub plant: i32, pub tree: i32, pub caustic: i32, pub material: i32, pub tilt: f32,
     pub sun: [f32; 3], pub sun_alt: f32, pub mood: Mood, pub fade: f32,
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
-    pub prism: f32, pub passing: [f32; 4], pub season: [f32; 4],
+    pub prism: f32, pub life: f32, pub passing: [f32; 4], pub season: [f32; 4],
     /// from signals: birds (x, y, perched, beat) and how many, dust, frost, extra suncatcher turn
     pub flock: [[f32; 4]; 6], pub flock_n: i32,
     /// a light of its own (index into LAMPS) and how far on it is
@@ -163,6 +163,7 @@ impl Renderer {
         gl.uniform_1_f32(u("gust").as_ref(), f.gust);
         gl.uniform_4_f32_slice(u("cat").as_ref(), &f.cat);
         gl.uniform_1_f32(u("prism").as_ref(), f.prism);
+        gl.uniform_1_f32(u("life").as_ref(), f.life);
         gl.uniform_4_f32_slice(u("passing").as_ref(), &f.passing);
         gl.uniform_4_f32_slice(u("season").as_ref(), &f.season);
         gl.uniform_4_f32_slice(u("flock").as_ref(), f.flock.as_flattened());

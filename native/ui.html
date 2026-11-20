@@ -307,6 +307,7 @@
   <symbol id="i-car" viewBox="0 0 24 24"><path d="M4.8 16.5H3v-3.6l2.2-4.5A2 2 0 0 1 7 7.3h10a2 2 0 0 1 1.8 1.1l2.2 4.5v3.6h-1.8M9.2 16.5h5.6M3 12.9h18"/><circle cx="7" cy="16.7" r="2"/><circle cx="17" cy="16.7" r="2"/></symbol>
   <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8.5h10a2.5 2.5 0 1 0-2.5-2.5M3 12.5h15a2.5 2.5 0 1 1-2.5 2.5M3 16.5h6.5"/></symbol>
   <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.2 14.5A3.9 3.9 0 0 1 6.8 6.7a5.4 5.4 0 0 1 10.4 1.2 3.3 3.3 0 0 1 .3 6.6"/><path d="M9 17.5l-.9 2.5M12.6 16.5l-.9 2.5M16.2 17.5l-.9 2.5"/></symbol>
+  <symbol id="i-life" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/><path d="M12 7.5l3.2 1.3 1.3 3.2-1.3 3.2-3.2 1.3-3.2-1.3-1.3-3.2 1.3-3.2z"/></symbol>
   <symbol id="i-prism" viewBox="0 0 24 24"><path d="M12 2.5v3.6M12 6.1l4.6 5.6L12 21.3l-4.6-9.6zM7.4 11.7h9.2M12 6.1v15.2"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9M4.5 4.5V9H9"/></symbol>
   <symbol id="i-curve" viewBox="0 0 24 24"><path d="M3 16c3 0 3.6-8 6.5-8S13 16 16 16s3.4-4 5-4"/></symbol>
@@ -381,6 +382,7 @@
             <div class="toggles">
               <button class="toggle" id="rain"><svg class="ico"><use href="#i-rain"/></svg>rain<i class="sw"></i></button>
               <button class="toggle" id="prism"><svg class="ico"><use href="#i-prism"/></svg>suncatcher<i class="sw"></i></button>
+              <button class="toggle" id="life"><svg class="ico"><use href="#i-life"/></svg>tiny life<i class="sw"></i></button>
             </div></div>
         </div>
       </section>
@@ -432,7 +434,7 @@ async function send(line, quiet) {
   // air comes back as every level; name only the ones set by hand
   const air = /\bshade (auto|curve|[\d.]+)$/.test(t) ? [...t.matchAll(/(\w+) ([\d.]+|curve)/g)].map(x => x[2] == "curve" ? `${x[1]} on a curve` : `${x[1]} ${Math.round(x[2] * 100)}%`) : null;
   if (!quiet) toast(air ? (air.length ? air.join(" · ") : "all air follows the signals")
-        : o ? [o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.material && o.material != 'plaster' && o.material, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && lampName(o.lamp), `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
+        : o ? [o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.material && o.material != 'plaster' && o.material, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.life == 'on' && 'tiny life', o.lamp && o.lamp != 'none' && lampName(o.lamp), `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
           : t.length > 200 ? t.slice(0, 200) + '…' : t);
   poll();
   clearTimeout(shotT); shotT = setTimeout(shot, 1300);   // after the crossfade has mostly settled
@@ -453,6 +455,7 @@ $('keep').onclick = () => send(st && st.kept ? 'drop' : 'keep');
 $('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
 $('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
 $('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'));
+$('life').onclick = () => send('life ' + (st && st.look.life ? 'off' : 'on'));
 
 const lampName = l => ['candle', 'lantern', 'fireplace', 'bonfire'].includes(l) ? l : ['sunset', 'rainbow', 'afterglow'].includes(l) ? l + ' projector' : l + ' lamp';
 const LAMP = { neon: 'a pink and teal sign across the street, brightest after dark', sodium: 'HID grow light, high-pressure sodium: deep amber, sharp shadows',
@@ -666,6 +669,7 @@ async function poll() {
   chips('caustic', C.caustic, L.caustic);
   $('rain').classList.toggle('on', L.rain); $('prism').classList.toggle('on', L.prism);
   $('rain').setAttribute('aria-pressed', L.rain); $('prism').setAttribute('aria-pressed', L.prism);
+  $('life').classList.toggle('on', !!L.life); $('life').setAttribute('aria-pressed', !!L.life);
   chips('season', C.season, st.season);
   for (const b of $('season').children) b.title = b.dataset.v == 'auto' ? 'follows the date: ' + st.season_now : '';
   const sunsay = st.sun.alt > 0 ? `sun ${st.sun.alt}° up, from the ${WIND[compass(st.sun.az)]}` : 'the sun is down';
@@ -712,7 +716,7 @@ async function poll() {
     const pic = el('span', 'pic'); pic.style.setProperty('--c', C.mood_wall[C.mood.indexOf(o.mood)] || '#888');
     if (G && G.style[o.style]) { const im = el('img'); im.src = 'data:image/png;base64,' + G.style[o.style]; im.alt = ''; pic.append(im); }
     const what = el('div', 'what'); what.append(el('b', '', `${o.style} · ${o.plant == 'none' ? 'no plant' : o.plant}`),
-      el('small', '', [o.mood, o.material && o.material != 'plaster' && o.material, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && lampName(o.lamp)].filter(Boolean).join(' · ')));
+      el('small', '', [o.mood, o.material && o.material != 'plaster' && o.material, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.life == 'on' && 'tiny life', o.lamp && o.lamp != 'none' && lampName(o.lamp)].filter(Boolean).join(' · ')));
     const x = el('button', 'x'); x.append(icon('x')); x.title = 'remove'; x.onclick = () => send(`drop ${i + 1}`);
     d.dataset.cmd = `fav ${i + 1}`; d.append(pic, what, x); f.append(d);
   });

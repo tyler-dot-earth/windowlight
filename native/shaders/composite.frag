@@ -69,6 +69,131 @@ float scaleShadow(vec2 p, vec3 L, float soft){
   return s;
 }
 
+// tiny life. An old orb web fills the window's top corner; its silk is far too fine to see from here,
+// but the sun draws it on the wall as faint dusty threads, with the spider a soft dot at the hub.
+// w is measured inward from the corner, in the window plane
+const vec2 WEB_HUB = vec2(0.085, 0.075);
+float webT(vec2 w, float pen){
+  if (w.x < -0.01 || w.y < -0.01 || w.x > 0.24 || w.y > 0.22) return 1.0;
+  // the draft breathes the web in and out; the anchors on the frame stay put
+  float give = clamp(min(w.x, w.y)/0.06, 0.0, 1.0);
+  w += give*vec2(sin(time*0.61), cos(time*0.47 + 1.0))*0.0018*(1.0 + 3.0*gust);
+  vec2 d = w - WEB_HUB;
+  float r = length(d), a = atan(d.y, d.x);
+  // how far the thread can run this way before it meets the frame (the sides along x = 0 and y = 0)
+  vec2 dir = d/max(r, 1e-5);
+  const float N = 15.0, S = 6.2831853/N;
+  float k = floor(a/S + 0.5), la = a - k*S;
+  // spokes that miss the frame end on bridge threads at uneven lengths
+  float reach = 0.1 + 0.045*hash(vec2(mod(k, N), 8.0));
+  vec2 kd = vec2(cos(k*S), sin(k*S));
+  if (kd.x < 0.0) reach = min(reach, WEB_HUB.x/-kd.x);
+  if (kd.y < 0.0) reach = min(reach, WEB_HUB.y/-kd.y);
+  float s = max(pen*0.5, 0.0009), amp = min(1.0, 0.0011/s);
+  float silk = 0.0;
+  // spokes, a couple torn away
+  float spoke = r*abs(sin(la));
+  if (hash(vec2(k, 4.1)) > 0.12) silk = max(silk, exp(-pow(spoke/s, 2.0))*step(r, reach + 0.002)*0.9);
+  // the capture spiral, sagging straight between spokes, with gaps where flies tore through
+  float rp = r*cos(la)/cos(0.5*S);
+  float turns = rp/0.0068 - a/6.2831853;
+  float ring = abs(fract(turns) - 0.5)*0.0068;
+  float inner = smoothstep(0.016, 0.02, r)*step(rp, reach*0.86);
+  float torn = step(0.2, hash(vec2(floor(turns), k + 31.0)));
+  silk = max(silk, exp(-pow(ring/s, 2.0))*inner*torn*0.75);
+  // the frame thread round the outside, and dust caught in clumps along the silk
+  float rb = reach*cos(la)/cos(0.5*S);
+  silk = max(silk, exp(-pow(abs(rp - reach)/s, 2.0))*step(rb, 0.15)*step(0.0, min(w.x, w.y))*0.8);
+  vec2 g = w*vec2(90.0, 90.0); vec2 gi = floor(g);
+  float hd = hash(gi + 7.3);
+  if (hd > 0.86) silk = max(silk, smoothstep(0.0028 + s, 0.0, length((fract(g) - 0.5)/90.0))*silk*1.8 + 0.0);
+  float shade = silk*amp*0.7;
+  // the spider: mostly still at the hub, now and then off along a spoke and back
+  float cyc = time/83.0, f = fract(cyc), out_ = smoothstep(0.86, 0.91, f)*smoothstep(1.0, 0.95, f);
+  float ka = (floor(hash(vec2(floor(cyc), 2.0))*N))*S;
+  vec2 sp = WEB_HUB + vec2(cos(ka), sin(ka))*0.05*out_;
+  vec2 e = w - sp; vec2 fw = mix(vec2(0.0, -1.0), vec2(cos(ka), sin(ka)), out_);
+  vec2 b = vec2(dot(e, fw), dot(e, vec2(-fw.y, fw.x)));
+  float body = min(length((b + vec2(0.0035, 0.0))/vec2(1.3, 1.0)) - 0.0035, length(b - vec2(0.0025, 0.0)) - 0.0022);
+  float legs = 1e3;
+  for (int i = 0; i < 4; i++) {
+    float t = 0.35 + 0.42*float(i), wig = 0.12*sin(time*9.0 + float(i))*out_;
+    legs = min(legs, sdSeg(abs(b.y) > 0.0 ? vec2(b.x, abs(b.y)) : b, vec2(0.002, 0.0), vec2(0.002 + 0.008*cos(t + wig), 0.0085*sin(t + wig))));
+  }
+  shade = max(shade, smoothstep(s*1.2, -s*0.4, body)*0.85);
+  shade = max(shade, exp(-pow(legs/max(s, 0.0012), 2.0))*min(1.0, 0.0007/s)*0.6);
+  return 1.0 - shade;
+}
+
+// dandelion seeds that blow in through the open window and drift across the room, now and then.
+// Slot i: where its seed is (S) and how present it is (0 when none is on its way)
+float seedAt(int i, out vec3 S, out float spin){
+  float fi = float(i), T = 47.0 + 19.0*fi;
+  float c = (time + 31.0*fi)/T, n = floor(c), f = fract(c);
+  float h1 = hash(vec2(n, fi + 3.0)), h2 = hash(vec2(n, fi + 9.0)), h3 = hash(vec2(n, fi + 15.0));
+  float dirX = h3 < 0.5 ? 1.0 : -1.0;
+  float x = mix(-1.25, 1.55, dirX > 0.0 ? f : 1.0 - f) + 0.04*sin(time*0.37 + h1*20.0);
+  float y = mix(0.25, 1.05, h1) - 0.32*f + 0.03*sin(time*0.53 + h2*12.0) + 0.02*sin(time*1.3 + h1*7.0);
+  float z = mix(0.08, 0.42, h2) + 0.05*sin(time*0.29 + h3*9.0);
+  S = vec3(x, y, z);
+  spin = time*(0.3 + 0.4*h2)*dirX + h1*6.28;
+  float season_ = season.x + season.y + 0.3*season.z;
+  return step(h3*0.0 + hash(vec2(n, fi + 21.0)), 0.55*season_)*smoothstep(0.0, 0.06, f)*smoothstep(1.0, 0.94, f);
+}
+// what a seed looks like from the front, at offset e from it: fine rays in an umbrella, a beak, the seed below.
+// Returns how much of the pixel is pappus (x) and seed (y)
+vec2 seedLook(vec2 e, float spin, float px){
+  const float R = 0.0105;
+  if (abs(e.x) > R*1.5 || e.y > R*1.3 || e.y < -R*2.7) return vec2(0.0);
+  float fl = 0.0;
+  vec2 top = vec2(0.0, 0.0);
+  float lean = 0.18*sin(spin*0.7);
+  mat2 rot = mat2(cos(lean), sin(lean), -sin(lean), cos(lean));
+  e = rot*e;
+  for (int k = 0; k < 34; k++) {
+    float fk = float(k), ph = fk*2.39996 + spin, el = 0.08 + 0.7*hash(vec2(fk, 2.0));
+    float len = R*(0.8 + 0.25*hash(vec2(fk, 5.0)));
+    // each ray leaves the top at elevation el above flat, seen from a little above
+    vec2 tip = vec2(cos(ph)*cos(el), sin(el)*0.9 + sin(ph)*cos(el)*0.3)*len;
+    vec2 mid = tip*0.5 + vec2(0.0, 0.08*len);
+    float d = min(sdSeg(e, top, mid), sdSeg(e, mid, tip));
+    fl += smoothstep(px*0.8, 0.0, d)*0.2 + smoothstep(px*1.2 + R*0.05, 0.0, length(e - tip))*0.12;
+  }
+  fl = min(fl, 0.75);
+  float beak = sdSeg(e, top, vec2(0.0, -R*1.6));
+  float seed = length((e - vec2(0.0, -R*1.95))/vec2(0.45, 1.0)) - R*0.22;
+  return vec2(max(fl, smoothstep(px*0.7, 0.0, beak)*0.35), smoothstep(px*0.8, -px*0.3, seed));
+}
+// which seed (if any) covers screen point uv: pappus and seed cover, and where that seed is
+vec2 seedPix(vec2 uv, float px, out vec3 S){
+  vec2 best = vec2(0.0); S = vec3(0.0, 0.0, -1.0);
+  for (int i = 0; i < 3; i++) {
+    vec3 Si; float spin; float on = seedAt(i, Si, spin);
+    if (on <= 0.0) continue;
+    vec2 c = seedLook(uv - Si.xy, spin, px)*on;
+    if (c.x + c.y > best.x + best.y) { best = c; S = Si; }
+  }
+  return best;
+}
+// the shadow a seed throws on wall point p, lit along L
+float seedShadow(vec2 p, vec3 L, float hz){
+  float sh = 0.0;
+  for (int i = 0; i < 3; i++) {
+    vec3 S; float spin; float on = seedAt(i, S, spin);
+    if (on <= 0.0) continue;
+    vec2 X = p + S.z/L.z*L.xy;
+    vec2 e = X - S.xy;
+    if (dot(e, e) > 0.0012) continue;
+    float pen = 0.0047*S.z/L.z*hz + 0.0006;
+    float r = length(e - vec2(0.0, 0.0045));
+    float disc = smoothstep(0.0105 + pen, 0.0105 - pen, r)*(0.12 + 0.18*smoothstep(0.004, 0.0105, r))*(0.85 + 0.3*noise(e*1800.0));
+    float seed = smoothstep(pen + 0.0025, 0.0, length((e - vec2(0.0, -0.02))/vec2(0.5, 1.0)));
+    float beak = smoothstep(pen + 0.0006, 0.0, sdSeg(e, vec2(0.0), vec2(0.0, -0.017)))*0.15;
+    sh = max(sh, max(max(disc, seed*0.7), beak)*on);
+  }
+  return sh;
+}
+
 // a flame's flicker, 0..1: a fast flutter on a slower breath. t wraps so the noise keeps its precision
 float flick(float t, float s){
   return 0.5*noise(vec2(t*7.0, s)) + 0.3*noise(vec2(t*17.0, s + 7.0)) + 0.2*noise(vec2(t*1.9, s + 3.0));
@@ -157,6 +282,13 @@ void main(){
   vec3 amb = mix(0.04*mix(nightTint, vec3(0.6), 0.4), ambAmt*shadeTint, day) + twi*vec3(0.05, 0.03, 0.065)*ambAmt*5.0;
   amb *= 0.72 + 0.5*smoothstep(-1.4, 1.2, uv.x);
   vec3 col = wall*amb;
+  // a drifting seed, seen against the wall in the room's own light
+  vec3 seedS; vec2 seedC = vec2(0.0);
+  if (life > 0.01) {
+    seedC = seedPix(uv, 1.4/res.y, seedS)*life;
+    col = mix(col, amb*vec3(0.95, 0.93, 0.88), seedC.x*0.45);
+    col = mix(col, amb*vec3(0.3, 0.22, 0.14), seedC.y);
+  }
 
   if (ns > 0.03 && L.z > 0.0) {
     vec3 p = vec3(uv, 0.0);
@@ -202,6 +334,11 @@ void main(){
       treeWide = mix(tShade, vec3(1.0), wide*0.25);
     }
     trans *= 1.0 - scaleShadow(uv, L, 0.0093*0.012/max(L.z, 0.05)*hz + ph*0.7);
+    if (life > 0.01) {
+      vec2 wc = q - (WC + vec2(-WH.x, WH.y));
+      trans *= mix(1.0, webT(vec2(wc.x, -wc.y), pen), life);
+      if (isSun) trans *= 1.0 - life*seedShadow(uv, L, hz);
+    }
     if (caustic >= 2) trans *= softCarafe(q - WC, pen);
     trans *= prismT(q - WC, pen);
     if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
@@ -218,7 +355,14 @@ void main(){
     vec2 lq = q - WC;
     float halo = sbox(lq, WH, pen*6.0 + 0.03)*0.07 + sbox(lq, WH, 0.18 + 0.25*haze)*(0.05 + 0.08*haze);
     vec3 direct = lc*strength*(lit*trans*fringe*shade + halo*treeWide*(0.4 + 0.6*flat_)*vec3(1.0, 0.9, 0.8));
-    col += wall*direct;
+    col += wall*direct*(1.0 - 0.45*seedC.x - seedC.y);
+    // the seed itself, caught in the light: its fine rays glow white
+    if (seedC.x + seedC.y > 0.0 && isSun) {
+      vec3 Hs = seedS + (D_WIN - dot(n, seedS))/ns*L;
+      vec3 sl = textureLod(uAp, apUV(vec2(dot(ua, Hs), Hs.y)), 1.0).rgb;
+      if (treeType > 0) sl *= mix(tShade, vec3(1.0), texture(uDap, (planeQ(seedS, pcw, n, ua, L, ns, D_TREE, 0.96) - TREE_MIN)/TREE_SIZE).r);
+      col += lc*strength*sl*(seedC.x*vec3(1.0, 0.98, 0.93)*0.95 + seedC.y*vec3(0.25, 0.17, 0.09));
+    }
     // gloss: the sun caught in each glazed tile or satin board that faces halfway between it and us
     if (skin.a > 0.0) {
       vec3 Hh = normalize(L + normalize(eye - p));

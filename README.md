@@ -168,6 +168,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Its shade also dims the glow round the patch and the shaft in the air.
 - Five more plants: `fern` (a Boston fern in a hanging pot, fronds arching over and falling), `pothos` (heart-leaved vines trailing from a hanging pot), `paradise` (bird of paradise: tall torn paddle leaves and one crane-headed flower), `pearls` (string of pearls, strands of little round beads) and `fiddle` (fiddle-leaf fig, big violin-shaped leaves on a straight stem). The hanging ones swing a little on their cords.
 - Small things for scale: a light switch left of the window, standing 9 mm proud so it casts a crisp little shadow when the patch reaches it; a brass picture hook high on the right with an unfaded rectangle below it where a frame used to hang; a nail hole near the patch.
+- Tiny life (`--life on`, or the toggle under extras): an old orb web fills the window's top corner. The silk is too fine to see, but the sun draws it on the wall as faint dusty threads that breathe in the draft, with the spider a soft dot at the hub that now and then walks out along a spoke. In spring and summer a dandelion seed sometimes blows in and drifts across the room, its rays glowing white when it crosses the shaft, its ring of a shadow sliding over the patch. Costs about 0.24 ms a frame at 4K.
 - Cost at 4K: about 0.1 ms more per frame with a tree (1.9 ms at the bench default with an oak).
 
 ## Setup with Nix
