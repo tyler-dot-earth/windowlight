@@ -13,7 +13,7 @@ Throwaway spike: sunlight through a window onto a wall as a live niri wallpaper,
 - `gen-glpaper.mjs` turns that shader into a glpaper shader that computes the sun on the GPU, so it keeps following the sun without restarts
 - `./run.sh OUTPUT` runs it live on the background layer (10 fps at 1280x720). Ctrl-C stops it. Example: `./run.sh DP-1 --style arch --plant olive --mood terracotta --facing 200 --caustic both`
 - Cost on the RX 7800-class card: measured midday with olive leaves, about 3% GPU at the default and 18% at 1080p and 30 fps; caustics add about 1 and 2 points
-- `shot.sh` renders a still with headless Chrome, and `shots/v4/` holds the style, mood and scene sheets and a terracotta time-lapse; `shots/v5/` holds the caustics, tilt and day sheets and `ripples.gif`
+- `shot.sh` renders a still with headless Chrome into `shots/`, which git ignores along with every other image
 
 Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real lat/lon.
 
@@ -33,7 +33,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - `./wl.sh ctl sleep` fades to dark and stops drawing; `ctl wake` fades back in while the sun sweeps up from 70 minutes earlier, meant for a locker's before-lock and after-unlock hooks
   - `./wl.sh sample 24 dir` renders 24 random looks in daylight with `dir/looks.txt` holding each one's flags, and `./wl.sh shot out.png --size 3840x2160 ...` renders one still
   - `./wl.sh bench` times frames at 4K
-- `native/sheet-random.jpg` is a 24-look sample sheet
+- `./wl.sh sample 24 dir` makes a random-look sample sheet; renders and screenshots stay out of git
 
 ## native (round five)
 

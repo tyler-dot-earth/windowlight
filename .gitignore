@@ -1,0 +1,10 @@
+# renders and screenshots stay local; nothing binary goes in git
+shots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.webm
+*.bundle
