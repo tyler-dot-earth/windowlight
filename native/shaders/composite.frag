@@ -569,7 +569,7 @@ vec3 obscuraAt(vec3 P, vec3 nb, vec3 n, vec3 ua, float dayK){
   if (plantType > 0) {
     float tp = (D_PLANT - dot(n, H))/dn;
     vec3 Q = H + tp*d;
-    float occ = textureLod(uFol, folUV(vec2(dot(ua, Q), Q.y)), log2(max(PH_R*(1.0 + tp/r)*folTexel.x, 1.0))).r;
+    float occ = softFol(vec2(dot(ua, Q), Q.y), PH_R*(1.0 + tp/r));   // the whole cone through the hole, not one magnified mip texel
     c = mix(c, leafC*(vec3(0.3, 0.36, 0.45)*dayK*0.6 + twi*0.08) + lc*sl*leafTint()*0.6*pow(max(mu, 0.0), 3.0), occ*0.95);
   }
   float fall = pow(max(dot(n, d), 0.0)*d.z*(H.z*H.z)/(r*r)/n.z, 0.45)*smoothstep(0.0, 0.45, dot(n, d));   // the hole seen edge-on lets nothing by
