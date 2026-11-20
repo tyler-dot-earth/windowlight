@@ -51,6 +51,7 @@
     <h2>scene</h2>
     <div class="grid">
       <b>window</b><div class="row" id="style"></div>
+      <b>historic</b><div class="row" id="styleh"></div>
       <b>plant</b><div class="row" id="plant"></div>
       <b>mood</b><div class="row" id="mood"></div>
       <b>caustic</b><div class="row" id="caustic"></div>
@@ -66,7 +67,7 @@
     <h2>over time</h2>
     <div class="row">
       <label>shuffle <select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
-      <label>from <select id="pool"><option value="all">everything</option><option value="favourites">favourites</option></select></label>
+      <label>from <select id="pool"><option value="all">everything</option><option value="favourites">favourites</option><option value="historic">historic windows</option></select></label>
       <label>time-lapse <select id="timelapse"><option>off</option><option>day/1m</option><option>day/2m</option><option>day/5m</option><option>full/5m</option></select></label>
       <label>cat every <select id="catevery"><option>off</option><option>2m</option><option>10m</option><option>30m</option><option>1h</option></select></label>
     </div>
@@ -102,18 +103,21 @@ $('pool').onchange = e => send('set pool=' + e.target.value);
 $('timelapse').onchange = e => send(e.target.value == 'off' ? 'now' : 'set timelapse=' + e.target.value);
 $('catevery').onchange = e => send('set cat=' + e.target.value);
 
-function chips(id, list, cur) {
+function chips(id, list, cur, cmd = id) {
   const el = $(id);
   if (el.childElementCount != list.length) {
     el.innerHTML = '';
-    for (const name of list) { const b = document.createElement('button'); b.textContent = name; b.dataset.cmd = id + ' ' + name; el.append(b); }
+    for (const name of list) { const b = document.createElement('button'); b.textContent = name; b.dataset.cmd = cmd + ' ' + name; el.append(b); }
   }
   for (const b of el.children) b.classList.toggle('on', b.textContent == cur);
 }
 async function poll() {
   try { st = await (await fetch('/state')).json(); } catch { $('clock').textContent = 'not running'; return; }
   $('clock').textContent = st.clock.replace('T', '  ') + (st.timelapse ? '  · time-lapse' : '');
-  for (const k of ['style', 'plant', 'mood', 'caustic']) chips(k, st.choices[k], st.look[k]);
+  const h = st.choices.historic_from;
+  chips('style', st.choices.style.slice(0, h), st.look.style);
+  chips('styleh', st.choices.style.slice(h), st.look.style, 'style');
+  for (const k of ['plant', 'mood', 'caustic']) chips(k, st.choices[k], st.look[k]);
   $('rain').textContent = st.look.rain ? 'on' : 'off'; $('rain').classList.toggle('on', st.look.rain);
   for (const k of ['tilt', 'facing']) if (dragging != k) { $(k).value = Math.round(st.look[k]); $(k + 'v').textContent = Math.round(st.look[k]) + '°'; }
   $('keep').textContent = st.kept ? '♥ kept' : '♡ keep'; $('keep').classList.toggle('on', st.kept);

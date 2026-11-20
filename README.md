@@ -62,3 +62,18 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - A shuffle that has to jump the clock to a sunny moment also hides the jump behind the cloud.
 - Cost at 4K is still small: 1.1 to 1.8 ms per frame. Rain and a walking cat redraw the window texture each frame, which adds about 0.5 ms.
 - `./wl.sh headless --ui 7899 --breeze on` is the offscreen test driver. It serves the page and follows niri while it `wait`s, and `--size` sets its shot size.
+
+## native (round six)
+
+- Nine historical windows, all original drawings in each period's style:
+  - `rose`: a Gothic rose with twelve lancet petals, a quatrefoil centre, foils and roundels, in blues, rubies and gold.
+  - `tracery`: a Gothic two-light window with bar tracery, a sexfoil oculus, trefoils and diamond quarries.
+  - `palladian`: a Venetian window with a round-headed centre light, a fanlight and flat side lights.
+  - `shoji`: Japanese paper screens on a kumiko grid, one slid back so part of the window is bare.
+  - `moorish`: a Nasrid twin horseshoe arch on a slender column, with a celosia of round holes above.
+  - `prairie`: paired art-glass casements with chevron leading and small squares of colour.
+  - `moon`: a Chinese garden moon window filled with ice-ray lattice.
+  - `persian`: a Qajar orosi with three pointed sashes and a star lattice of jewel-coloured glass.
+  - `nouveau`: Art Nouveau stems rising to stylised roses, with leaves and an amber band.
+- `--pool historic` (or `ctl set pool=historic`) makes shuffles draw only from these, and the page has its own row of them.
+- Cost at 4K: 1.1 to 1.6 ms per frame with rain, a plant and both caustics.

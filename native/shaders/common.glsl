@@ -3,6 +3,7 @@ precision highp float;
 precision highp int;
 uniform float time;
 uniform int style;      // 0 window 1 blinds 2 lattice 3 georgian 4 arch 5 shutters 6 sheer 7 porthole 8 stained 9 slats 10 jali
+                        // 11 rose 12 tracery 13 palladian 14 shoji 15 moorish 16 prairie 17 moon 18 persian 19 nouveau
 uniform int plantType;  // 0 none 1 ficus 2 monstera 3 palm 4 olive
 uniform int caustic;    // 0 none 1 pool 2 glass 3 both
 uniform float tilt;     // window plane angle against the wall, radians
@@ -169,11 +170,203 @@ vec3 stained(vec2 l){
   return c*lead*(0.85 + 0.15*noise(l*40.0));
 }
 
+// ---------------- historical windows (styles 11..19): each returns rgb light colour and a = open
+float archIn(vec2 p, float hw, float s, float k, float bot){   // jambs to s, then a round (k=0) to equilateral (k=1) head
+  float R = hw*(1.0 + k);
+  float head = step(length(vec2(abs(p.x) + R - hw, p.y - s)), R) * step(s, p.y);
+  return max(head, step(abs(p.x), hw) * step(bot, p.y) * step(p.y, s));
+}
+float foil(vec2 p, float r, float n){ float a = atan(p.x, p.y); return step(length(p), r*(0.76 + 0.24*abs(cos(0.5*n*a)))); }   // cusped n-foil, a lobe up
+float sdBox(vec2 p, vec2 h){ vec2 d = abs(p) - h; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+vec2 cells(vec2 g, float jit){   // voronoi: x = gap between the two nearest (0 on an edge), y = cell hash
+  vec2 i = floor(g), f = fract(g);
+  float d1 = 8.0, d2 = 8.0; vec2 best = vec2(0.0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 c = vec2(float(x), float(y));
+    vec2 o = 0.5 + jit*sin(6.2831*vec2(hash(i + c), hash(i + c + 4.2)));
+    float d = length(c + o - f);
+    if (d < d1) { d2 = d1; d1 = d; best = i + c; } else if (d < d2) d2 = d;
+  }
+  return vec2(d2 - d1, hash(best + 11.0));
+}
+vec3 jewel(float h){
+  return h < 0.2 ? vec3(0.92, 0.18, 0.2) : h < 0.38 ? vec3(1.0, 0.68, 0.16) : h < 0.56 ? vec3(0.22, 0.38, 0.95)
+       : h < 0.7 ? vec3(0.18, 0.7, 0.38) : h < 0.84 ? vec3(0.95, 0.45, 0.62) : vec3(0.98, 0.92, 0.6);
+}
+
+// Gothic rose (13th c.): twelve lancet petals round a quatrefoil, a ring of foils and roundels, Chartres blues and rubies
+vec4 roseW(vec2 l){
+  vec2 p = l - vec2(0.0, 0.03);
+  float r = length(p), a = atan(p.x, p.y), sec = 2.0*PI/12.0;
+  float k = floor(a/sec + 0.5), u = a - k*sec;
+  vec2 s = r*vec2(sin(u), cos(u));
+  float hw = 0.30*sin(sec*0.5) - 0.012, R = hw*1.6;
+  float petal = max(step(abs(s.x), s.y*sin(sec*0.5) - 0.012) * step(0.15, s.y) * step(s.y, 0.30),
+                    step(length(vec2(abs(s.x) + R - hw, s.y - 0.30)), R) * step(0.30, s.y));
+  float u2 = a - (floor(a/sec) + 0.5)*sec;
+  vec2 s2 = r*vec2(sin(u2), cos(u2));
+  float small = step(length(s2 - vec2(0.0, 0.395)), 0.024);
+  float outer = foil(s - vec2(0.0, 0.455), 0.042, 4.0);
+  float centre = foil(p, 0.115, 4.0);
+  float o = max(max(centre, petal), max(small, outer));
+  vec3 blue = vec3(0.2, 0.36, 0.95), ruby = vec3(0.9, 0.16, 0.22), gold = vec3(1.0, 0.74, 0.22);
+  vec3 c = mod(k, 2.0) < 0.5 ? blue : ruby;
+  c = mix(c, mod(k, 2.0) < 0.5 ? ruby : gold, step(s.y, 0.225));
+  float lead = smoothstep(0.003, 0.006, abs(s.y - 0.225)) * step(0.15, s.y) + step(s.y, 0.15);
+  if (centre > 0.5) { c = mix(gold, ruby, smoothstep(0.035, 0.06, r)); lead = smoothstep(0.003, 0.006, abs(r - 0.05)); }
+  if (outer > 0.5) { float rr = length(s - vec2(0.0, 0.455)); c = mix(gold, blue, smoothstep(0.012, 0.02, rr)); lead = 1.0; }
+  if (small > 0.5) { c = ruby; lead = 1.0; }
+  vec2 v = cells(l*26.0, 0.38);
+  lead *= smoothstep(0.03, 0.07, v.x);
+  return vec4(c*(0.8 + 0.35*v.y), o*lead);
+}
+
+// Gothic two-light window with bar tracery (c. 1260): cusped lancets, a sexfoil oculus, trefoils, diamond quarries
+vec4 traceryW(vec2 l){
+  float o = archIn(vec2(abs(l.x) - 0.19, l.y), 0.165, 0.02, 0.6, -0.55);
+  o = max(o, foil(l - vec2(0.0, 0.43), 0.125, 6.0));
+  o = max(o, foil(vec2(abs(l.x) - 0.27, l.y - 0.35), 0.05, 3.0));
+  vec2 g = mat2(0.7071, -0.7071, 0.7071, 0.7071) * (l*vec2(13.0, 8.0));
+  vec2 d = abs(fract(g) - 0.5);
+  return vec4(0.93, 0.96, 0.87, o*smoothstep(0.02, 0.045, min(d.x, d.y)));
+}
+
+// Palladian (Venetian) window, 18th c.: a round-headed centre light with a fanlight, flat side lights, sash bars
+vec4 palladianW(vec2 l){
+  float bot = -0.55, s = 0.17, top = 0.09, sp = 0.19;
+  float hb = rail((fract((l.y - bot)/sp + 0.5) - 0.5)*sp, 0.006);
+  vec2 a = l - vec2(0.0, s);
+  float ang = atan(a.y, a.x), st = PI/6.0;
+  float fan = rail(length(a)*sin(ang - st*floor(ang/st + 0.5)), 0.006) * rail(length(a) - 0.09, 0.006) * step(0.035, length(a));
+  float cen = archIn(l, 0.2, s, 0.0, bot) * mix(hb*rail(abs(l.x) - 0.067, 0.006), fan, step(s, l.y)) * rail(l.y - s, 0.009);
+  vec2 sd = vec2(abs(l.x) - 0.345, l.y - (bot + top)*0.5);
+  float side = inBox(sd, vec2(0.095, (top - bot)*0.5)) * rail(sd.x, 0.006) * hb;
+  return vec4(1.0, 1.0, 1.0, max(cen, side));
+}
+
+// Japanese shoji (Edo): paper on a kumiko grid, two sliding panels, one pushed back and overlapping
+float shojiPanel(vec2 l, float x0, float x1){
+  if (l.x < x0 || l.x > x1) return 1.0;
+  float w = x1 - x0, u = l.x - x0, v = l.y + WH.y, H = 2.0*WH.y;
+  float wood = 1.0 - step(0.02, u)*step(u, w - 0.02)*step(0.02, v)*step(v, H - 0.02);
+  wood = max(wood, step(v, 0.14));
+  float ku = abs(fract(u/(w/3.0) + 0.5) - 0.5)*(w/3.0), kv = abs(fract((v - 0.14)/0.105 + 0.5) - 0.5)*0.105;
+  wood = max(wood, step(min(ku, kv), 0.0045));
+  return (1.0 - wood) * 0.52 * (0.86 + 0.14*fbm(l*vec2(70.0, 9.0)));
+}
+vec4 shojiW(vec2 l){
+  float o = inBox(l, WH) * shojiPanel(l, -0.07, 0.36) * shojiPanel(l, 0.0, 0.42);
+  return vec4(mix(vec3(1.0), vec3(1.0, 0.93, 0.8), step(-0.07, l.x)), o);
+}
+
+// Moorish ajimez (Nasrid, 14th c.): twin horseshoe arches on a slender column, a celosia of round holes above
+float horseshoe(vec2 p, float r, float w, float s, float bot){
+  float jt = s - sqrt(r*r - w*w);
+  return max(step(length(p - vec2(0.0, s)), r) * step(jt, p.y), step(abs(p.x), w) * step(bot, p.y) * step(p.y, jt));
+}
+vec4 ajimezW(vec2 l){
+  float o = horseshoe(vec2(abs(l.x) - 0.2, l.y), 0.175, 0.148, 0.12, -0.55);
+  vec2 g = (l - vec2(0.0, 0.5))*vec2(22.0, 22.0/0.866);
+  float row = floor(g.y);
+  vec2 f = vec2(fract(g.x + 0.5*mod(row, 2.0)) - 0.5, (fract(g.y) - 0.5)*0.866);
+  o = max(o, inBox(l - vec2(0.0, 0.5), vec2(0.3, 0.085)) * step(length(f), 0.3));
+  return vec4(1.0, 1.0, 1.0, o);
+}
+
+// Prairie art glass (c. 1908): paired casements, clear glass, straight leading in chevrons, small squares of colour
+vec4 prairieW(vec2 l){
+  float o = inBox(l, WH) * rail(l.x, 0.016);
+  vec2 q = vec2(abs(abs(l.x) - 0.21), l.y);
+  float d = sdSeg(q, vec2(0.15, -0.47), vec2(0.15, 0.44));
+  d = min(d, sdSeg(q, vec2(0.0, 0.44), vec2(0.15, 0.44)));
+  d = min(d, sdSeg(q, vec2(0.0, -0.47), vec2(0.15, -0.47)));
+  d = min(d, sdSeg(q, vec2(0.0, 0.36), vec2(0.15, 0.36)));
+  d = min(d, sdSeg(q, vec2(0.03, -0.47), vec2(0.03, 0.125)));
+  for (int k = 0; k < 3; k++) { float y = 0.16 + 0.07*float(k); d = min(d, sdSeg(q, vec2(0.0, y), vec2(0.15, y - 0.11))); }
+  d = min(d, sdSeg(q, vec2(0.03, 0.125), vec2(0.15, -0.1)));
+  vec3 c = vec3(1.0);
+  float sq1 = sdBox(q - vec2(0.0, 0.40), vec2(0.022)), sq2 = sdBox(q - vec2(0.095, 0.40), vec2(0.016)), sq3 = sdBox(q - vec2(0.09, -0.41), vec2(0.014));
+  d = min(d, min(abs(sq1), min(abs(sq2), abs(sq3))));
+  if (sq1 < 0.0) c = vec3(1.0, 0.72, 0.2); else if (sq2 < 0.0) c = vec3(0.35, 0.72, 0.4); else if (sq3 < 0.0) c = vec3(0.92, 0.32, 0.22);
+  else if (q.y > 0.12 && q.y < 0.37 && q.y > 0.16 - 0.733*q.x && q.y < 0.30 - 0.733*q.x + 0.08) c = vec3(1.0, 0.93, 0.74);
+  return vec4(c, o*smoothstep(0.003, 0.0055, d));
+}
+
+// Chinese garden moon window (Ming and Qing, Suzhou): a round opening filled with ice-ray lattice
+vec4 moonW(vec2 l){
+  vec2 p = l - vec2(0.0, 0.05);
+  vec2 c = cells(p*6.5 + 3.7, 0.45);
+  float rim = smoothstep(0.004, 0.007, abs(length(p) - 0.395));
+  return vec4(1.0, 1.0, 1.0, step(length(p), 0.41) * smoothstep(0.055, 0.075, c.x) * rim);
+}
+
+// Persian orosi (Qajar, 19th c.): three pointed-arch sashes, a wooden star lattice holding jewel-coloured glass
+vec4 orosiW(vec2 l){
+  float pw = 0.28, i = floor((l.x + 0.42)/pw);
+  float u = l.x - (-0.42 + pw*(i + 0.5));
+  float o = step(abs(l.x), 0.42) * archIn(vec2(u, l.y), 0.122, 0.28, 0.7, -0.55);
+  vec2 g = vec2(u*9.0 + 0.5, (l.y + 0.55)*9.0), f = fract(g) - 0.5, id = floor(g), sym = vec2(abs(id.x), id.y);
+  float m = max(max(abs(f.x), abs(f.y)), (abs(f.x) + abs(f.y))*0.7071);
+  float star = step(m, 0.3);
+  float wood = max(1.0 - smoothstep(0.018, 0.034, abs(m - 0.3)), smoothstep(0.455, 0.475, max(abs(f.x), abs(f.y))));
+  vec3 c = star > 0.5 ? jewel(hash(sym + 3.1)) : jewel(hash(sym*1.3 + 8.7 + vec2(0.0, step(0.0, f.x*f.y))));
+  return vec4(c, o*(1.0 - wood));
+}
+
+// Art Nouveau (c. 1900): whiplash stems rising to stylised roses, leaves, a curved band of amber across the top
+vec4 nouveauW(vec2 l){
+  float o = inBox(l, WH);
+  vec3 c = vec3(0.97, 0.95, 0.88);
+  float d = 1e3;
+  for (int k = 0; k < 3; k++) {
+    float fk = float(k) - 1.0, fy = 0.24 + 0.08*(1.0 - abs(fk));
+    float t = clamp(l.y + 0.55, 0.0, fy + 0.55);
+    float sx = fk*0.2 + 0.05*sin(t*5.5 + fk*1.7)*t + 0.06*fk*t;
+    if (l.y < fy) d = min(d, abs(l.x - sx)*0.85);
+    float tf = fy + 0.55, fx = fk*0.2 + 0.05*sin(tf*5.5 + fk*1.7)*tf + 0.06*fk*tf;
+    vec2 pf = l - vec2(fx, fy + 0.05);
+    float r = length(pf), a = atan(pf.y, pf.x);
+    if (r < 0.075) {
+      float sp = r/0.024 + a/6.2831;
+      d = min(d, min(fract(sp), 1.0 - fract(sp))*0.024*0.9);
+      c = mix(vec3(0.85, 0.22, 0.38), vec3(0.98, 0.55, 0.65), smoothstep(0.0, 0.07, r));
+    }
+    d = min(d, abs(r - 0.075));
+    for (int j = 0; j < 2; j++) {
+      float yl = -0.2 + 0.2*float(j) + 0.05*fk, side = (mod(float(j) + fk, 2.0) < 0.5 ? 1.0 : -1.0);
+      float tl = yl + 0.55, xl = fk*0.2 + 0.05*sin(tl*5.5 + fk*1.7)*tl + 0.06*fk*tl;
+      vec2 pl = rot(side*0.7) * (l - vec2(xl + side*0.055, yl + 0.03));
+      float e = sdEll(pl, vec2(0.065, 0.02));
+      if (e < 0.0) c = vec3(0.5, 0.8, 0.38);
+      d = min(d, abs(e));
+    }
+  }
+  float arc = l.y - (0.43 + 0.07*cos(l.x*7.0));
+  if (arc > 0.0) c = vec3(1.0, 0.8, 0.45);
+  d = min(d, abs(arc)*0.8);
+  d = min(d, abs(l.y + 0.3 + 0.025*sin(l.x*9.0 + 1.0))*0.9);
+  return vec4(c, o*smoothstep(0.0035, 0.006, d));
+}
+
+vec4 historic(vec2 l){
+  if (style == 11) return roseW(l);
+  if (style == 12) return traceryW(l);
+  if (style == 13) return palladianW(l);
+  if (style == 14) return shojiW(l);
+  if (style == 15) return ajimezW(l);
+  if (style == 16) return prairieW(l);
+  if (style == 17) return moonW(l);
+  if (style == 18) return orosiW(l);
+  return nouveauW(l);
+}
+
 float aperture(vec2 q);
 vec3 apertureC(vec2 q){
   vec2 l = q - WC;
   vec3 c = vec3(1.0);
-  if (style == 8) c = stained(l + (vec2(noise(q*6.0), noise(q*6.0+7.3)) - 0.5) * 0.007);
+  vec2 lw = l + (vec2(noise(q*6.0), noise(q*6.0+7.3)) - 0.5) * 0.007;
+  if (style >= 11) { vec4 h = historic(lw); return h.rgb * h.a * rainT(l) * catT(l); }
+  if (style == 8) c = stained(lw);
   return c * aperture(q) * rainT(l) * catT(l);
 }
 
@@ -181,6 +374,7 @@ float aperture(vec2 q){
   vec2 l = q - WC;
   l += (vec2(noise(q*6.0), noise(q*6.0+7.3)) - 0.5) * 0.007;   // old glass wobble
   float o;
+  if (style >= 11) return historic(l).a;
   if (style == 4) {                      // arched window with fan muntins
     float r = WH.x, sy = WH.y - r;
     vec2 a = l - vec2(0.0, sy);

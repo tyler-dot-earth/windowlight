@@ -1,7 +1,7 @@
 // Scene state over time: the current look, transitions between looks, gusts, the cat, favourites,
 // and wake/sleep fades.
 use crate::gfx::{Frame, Renderer, SceneTex};
-use crate::look::{Look, Mood, Rng, CAUSTICS, MOODS, PLANTS, STYLES};
+use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, MOODS, PLANTS, STYLES};
 use crate::sun;
 use std::time::{Duration, Instant};
 
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 pub struct Opts {
     pub lat: f64, pub lon: f64, pub look: Look, pub speed: f64, pub at_ms: Option<f64>, pub anim: f64,
     pub fps: f64, pub scale: f64, pub output: String, pub workspaces: Vec<usize>, pub shuffle_secs: Option<f64>, pub size: (i32, i32), pub lapse: Option<String>,
-    pub cat_secs: Option<f64>, pub pool_favs: bool, pub breeze: bool, pub ui_port: Option<u16>,
+    pub cat_secs: Option<f64>, pub pool: &'static str, pub breeze: bool, pub ui_port: Option<u16>,
 }
 
 #[derive(Clone, Copy)]
@@ -264,7 +264,12 @@ impl App {
 
     /// pick the next shuffle look: from the favourites when the pool says so, else anything
     fn pick(&mut self, facing: Option<f64>) -> Look {
-        if self.o.pool_favs {
+        if self.o.pool == "historic" {
+            let mut l = Look::random(&mut self.rng, facing, &self.look);
+            l.style = HISTORIC + self.rng.below(STYLES.len() - HISTORIC);
+            return l;
+        }
+        if self.o.pool == "favourites" {
             let favs = load_favs();
             if !favs.is_empty() {
                 let mut l = Look::from_flags(&favs[self.rng.below(favs.len())]).unwrap();
@@ -283,12 +288,22 @@ impl App {
             "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "mood": MOODS[l.mood], "caustic": CAUSTICS[l.caustic],
                       "tilt": l.tilt, "facing": l.facing, "rain": l.rain },
             "flags": l.flags(), "clock": self.clock(now), "asleep": self.asleep || self.fade.to == 0.0,
-            "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": if self.o.pool_favs { "favourites" } else { "all" },
+            "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": self.o.pool,
             "cat": self.o.cat_secs, "cat_now": self.cat.is_some(),
             "kept": favs.iter().any(|f| Look::from_flags(f).map(|x| fav_key(&x)) == Some(key.clone())),
             "favs": favs,
-            "choices": { "style": STYLES, "plant": PLANTS, "mood": MOODS, "caustic": CAUSTICS },
+            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "caustic": CAUSTICS },
         }).to_string()
+    }
+}
+
+/// which looks a shuffle draws from
+pub fn parse_pool(v: &str) -> Option<&'static str> {
+    match v {
+        "all" | "everything" => Some("all"),
+        "favourites" | "favorites" | "favs" => Some("favourites"),
+        "historic" | "historical" | "history" => Some("historic"),
+        _ => None,
     }
 }
 
@@ -349,10 +364,9 @@ impl App {
                             }
                             None => return format!("error: {k} wants 20s, 5m, 1h or off"),
                         },
-                        Ok(false) if k == "pool" => match v.as_str() {
-                            "favourites" | "favorites" | "favs" => self.o.pool_favs = true,
-                            "all" => self.o.pool_favs = false,
-                            _ => return "error: pool wants favourites or all".into(),
+                        Ok(false) if k == "pool" => match parse_pool(&v) {
+                            Some(p) => self.o.pool = p,
+                            None => return "error: pool wants all, favourites or historic".into(),
                         },
                         Ok(false) => match (k.as_str(), v.parse::<f64>()) {
                             ("lat", Ok(x)) => self.o.lat = x,
@@ -439,7 +453,7 @@ impl App {
             }
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
-            _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=favourites|all, cat=10m|off) \
+            _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off) \
                   | mood/style/plant/caustic/tilt/facing/rain VALUE | keep | drop [N] | favs | fav N | cat | gust [0..1] | now | sleep | wake | get | state".into(),
         }
     }
