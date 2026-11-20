@@ -134,6 +134,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Shuffle, keep and sleep sit under the preview, with cat, birds, car and breeze below them.
 - Window, room and light controls are grouped into their own cards. Wall moods show their colour, and facing reads as a compass direction.
 - Each window and plant button shows a small picture of its shape, drawn by the wallpaper's own shaders on page load (`ctl glyphs` returns them as base64 PNGs); windows show their glass colours.
+- Round eleven, the control page redesigned: the window and plant pictures are the buttons (windows as warm light on a dark wall that lights up when chosen, plants as their shadow in a patch of sun on the current wall), walls as paint chips, lamps grouped by kind with a dot of their colour (flames flicker), drawn icons instead of emoji, segmented choices and switches, and a compass for facing that shows the window's half of the sky and where the sun stands. Favourites show their window's light on their wall. Window pictures are now 120×136 for sharp screens.
 - The header shows the clock, the season and where the sun is, plus badges for time-lapse, shuffling or sleep.
 - Favourites read as "georgian · ficus" with a wall swatch; signals show a coloured state dot, a level bar and what each one drives.
 - Replies appear as a short toast. On a phone-width screen the cards stack with the scene controls straight after the preview.

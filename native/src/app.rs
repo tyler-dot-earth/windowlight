@@ -622,7 +622,7 @@ impl App {
                 let mut styles = serde_json::Map::new();
                 for (i, name) in STYLES.iter().enumerate() {
                     f.style = i as i32;
-                    styles.insert(name.to_string(), base64(&png_rgba(60, 68, &r.glyph(&f, false, 60, 68))).into());
+                    styles.insert(name.to_string(), base64(&png_rgba(120, 136, &r.glyph(&f, false, 120, 136))).into());
                 }
                 let mut plants = serde_json::Map::new();
                 for (i, name) in PLANTS.iter().enumerate().skip(1) {
