@@ -58,6 +58,22 @@ pub fn lets_in(ms: f64, lat: f64, lon: f64, facing_deg: f64) -> bool {
     alt > 8.0 * RAD && off.abs() < 65.0
 }
 
+/// how much of each season (spring, summer, autumn, winter) it is on the local day of `ms`: a full season
+/// for a month either side of its middle, blending over the month between; flipped south of the equator
+pub fn seasons(ms: f64, lat: f64) -> [f32; 4] {
+    use chrono::Datelike;
+    let day = chrono::DateTime::from_timestamp_millis(ms as i64).unwrap().with_timezone(&chrono::Local).ordinal() as f64;
+    let d = if lat < 0.0 { day + 182.5 } else { day };
+    let mut w = [105.0, 196.0, 288.0, 15.0].map(|c: f64| {
+        let off = ((d - c).rem_euclid(365.25)).min((c - d).rem_euclid(365.25));
+        let x = (1.0 - (off - 30.0) / 31.0).clamp(0.0, 1.0);
+        x * x * (3.0 - 2.0 * x)
+    });
+    let sum: f64 = w.iter().sum::<f64>().max(1e-6);
+    w.iter_mut().for_each(|x| *x /= sum);
+    w.map(|x| x as f32)
+}
+
 /// how squarely the light meets a window leaning `tilt_deg` (either way) facing `facing_deg`: 0 edge-on, 1 head-on
 pub fn squareness(ms: f64, lat: f64, lon: f64, facing_deg: f64, tilt_deg: f64) -> f64 {
     let (alt, az) = light(ms, lat, lon);

@@ -27,6 +27,13 @@ float softFol(vec2 q, float r){
   return s/6.0;
 }
 
+// where the line toward the light from wall point p meets the plane at depth D, in that plane's coords;
+// k pulls far planes back over the patch so the plant and birds stay in the light whatever the sun does
+vec2 planeQ(vec3 p, vec3 pcw, vec3 n, vec3 ua, vec3 L, float ns, float D, float k){
+  vec3 h = p + (D - dot(n, p))/ns*L, hc = pcw + (D - dot(n, pcw))/ns*L;
+  return vec2(dot(ua, h), h.y) - (vec2(dot(ua, hc), hc.y) - WC)*k;
+}
+
 void main(){
   vec2 fc = gl_FragCoord.xy;
   jit = hash(fc)*6.2831;
@@ -79,6 +86,9 @@ void main(){
       trans *= mix(vec3(1.0), leafTint(), occB*0.8*(0.95 - 0.45*haze));
     }
     if (caustic >= 2) trans *= carafe(q - WC, pen);
+    trans *= prismT(q - WC, pen);
+    if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
+    if (season.x + season.z > 0.02) trans *= fallT(planeQ(p, pcw, n, ua, L, ns, 0.85, 0.4), (0.003 + 0.004*(0.85 - D_WIN)/ns)*hz);
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
     float strength = E*smoothstep(0.0, 0.08, alt)*lightK;
     vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
@@ -93,6 +103,61 @@ void main(){
     col += wall*direct;
     col += wall*wall*lc*strength*0.06*(isSun ? 1.0 : 0.0);
     if (isSun) col += lc*strength*motes(uv)*lit*0.05*(1.0 - haze);
+
+    // the suncatcher's rainbows: each facet throws a short spectrum somewhere on the wall, and they sweep
+    // round as the crystal turns on its thread; leaves in front of it dim them all
+    if (prism > 0.0 && isSun) {
+      vec2 c = prismAt() + WC;
+      vec3 C3 = c.x*ua + vec3(0.0, c.y, 0.0) + D_WIN*n;
+      vec2 cw = C3.xy - (C3.z/L.z)*L.xy;
+      float open = textureLod(uAp, apUV(c), 2.0).r;
+      float leaf = plantType > 0 ? textureLod(uFol, folUV(planeQ(C3, pcw, n, ua, L, ns, D_PLANT, 0.8)), 2.0).r : 0.0;
+      float spin = prismSpin();
+      vec3 bow = vec3(0.0);
+      for (int i = 0; i < 11; i++) {
+        float fi = float(i), h1 = hash(vec2(fi, 3.1)), h2 = hash(vec2(fi, 7.7)), h3 = hash(vec2(fi, 1.9));
+        float ph = spin*(0.8 + 0.4*h3) + fi*0.571 + h1*2.0;
+        float face = cos(ph);
+        if (face < -0.2) continue;
+        vec2 dir = normalize(vec2(sin(ph), -0.5 - h3));
+        vec2 s = cw + dir*(0.22 + 0.75*h2) + vec2(0.0, 0.08*face);
+        vec2 rel = uv - s;
+        float len = 0.04 + 0.035*h2, wid = 0.011 + 0.008*h3;
+        float t = dot(rel, dir)/len, w = dot(rel, vec2(-dir.y, dir.x))/wid;
+        if (abs(t) > 1.3 || abs(w) > 3.0) continue;
+        bow += spectral(0.5 - 0.5*t)*exp(-w*w*1.4)*smoothstep(1.25, 0.6, abs(t))*smoothstep(-0.2, 0.35, face)*(0.6 + 0.4*h1);
+      }
+      col += wall*lc*strength*bow*prism*open*(1.0 - 0.85*leaf)*(1.0 - 0.8*haze)*2.6;
+    }
+
+    // a shaft through the air in front of the wall, with dust drifting in it; each step looks back
+    // along the light to see whether the window (and plant) let it through
+    if (isSun) {
+      vec3 beam = vec3(0.0); float specks = 0.0;
+      float j0 = fract(jit*0.159), spx = max(0.0013, 2.2/res.y);
+      for (int k = 0; k < 6; k++) {
+        float fk = float(k), z = (fk + j0)/6.0*D_WIN;
+        vec3 P = vec3(uv, z);
+        float dn = D_WIN - dot(n, P);
+        if (dn <= 0.0) continue;
+        vec3 H = P + dn/ns*L;
+        vec3 a = textureLod(uAp, apUV(vec2(dot(ua, H), H.y)), 3.5).rgb;
+        if (a.r + a.g + a.b < 0.02) continue;
+        if (plantType > 0) a *= mix(vec3(1.0), leafTint(), textureLod(uFol, folUV(planeQ(P, pcw, n, ua, L, ns, D_PLANT, 0.8)), 3.5).r*0.9);
+        beam += a;
+        float sc = 26.0 + fk*4.0;
+        vec2 g = uv*sc + vec2(time*0.04 + fk*3.1 + 0.5*sin(time*0.09 + fk), -time*0.025*(1.0 + 0.3*fk));
+        vec2 id = floor(g);
+        float h = hash(id + fk*17.0);
+        if (h > 0.968) {
+          vec2 cc = vec2(hash(id + 1.7), hash(id + 4.3))*0.7 + 0.15 + 0.12*vec2(sin(time*0.5 + h*30.0), cos(time*0.43 + h*21.0));
+          float r = length(fract(g) - cc)/sc;
+          float sz = spx*(1.0 + 1.8*hash(id + 8.8));
+          specks += dot(a, vec3(0.3333))*smoothstep(sz, 0.0, r)*(0.35 + 0.65*max(sin(time*1.3 + h*50.0), 0.0))/(1.0 + sz/spx*0.6);
+        }
+      }
+      col += lc*strength*(beam*(0.035/6.0) + specks*0.5)*(1.0 - 0.7*haze);
+    }
     if (isSun && pool) {
       vec3 Lr = vec3(L.x, -L.y, L.z);
       vec3 hr = p + tw*Lr;
@@ -104,6 +169,22 @@ void main(){
       float cz = texture(uCaus, apUV(qr + wob)).r;
       float fres = 0.22 + 0.4*pow(1.0 - sin(alt), 3.0);
       col += wall*lc*strength*litR*fres*(0.2 + 1.5*cz)*vec3(0.94, 1.0, 1.02)*(1.0 - 0.7*haze);
+    }
+  }
+
+  // headlights at night: a car going by throws the window across the wall from low down
+  if (passing.x == 2.0) {
+    float pr = passing.y;
+    vec3 Lc = normalize(vec3(mix(2.0, -2.0, pr)*passing.w, -0.07, 1.0));
+    float nc = dot(n, Lc);
+    if (nc > 0.05) {
+      vec3 p0 = vec3(uv, 0.0);
+      vec3 hcar = p0 + (D_WIN - dot(n, p0))/nc*Lc;
+      vec3 litc = softAp(vec2(dot(ua, hcar), hcar.y), 0.018);
+      float fol = 0.0;
+      if (plantType > 0) { vec3 hp2 = p0 + (D_PLANT - dot(n, p0))/nc*Lc; fol = softFol(vec2(dot(ua, hp2), hp2.y), 0.02); }
+      float env = smoothstep(0.0, 0.3, pr)*smoothstep(1.0, 0.7, pr);
+      col += wall*vec3(1.0, 0.88, 0.7)*litc*(1.0 - 0.92*fol)*env*0.5*(1.0 - day);
     }
   }
 

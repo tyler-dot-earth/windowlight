@@ -13,6 +13,9 @@ uniform float haze;
 uniform float rain;      // 0..1 drops on the glass
 uniform float gust;      // 0..1 extra wind, kicked by desktop activity
 uniform vec4 cat;        // x position on the sill, pose (0 walk, 1 sit), leg phase, direction (+1/-1); direction 0 = no cat
+uniform float prism;     // 0..1 a crystal suncatcher hanging in the window
+uniform vec4 passing;    // something outside: x kind (1 birds, 2 car at night), y progress 0..1, z seed, w direction
+uniform vec4 season;     // weights of spring, summer, autumn, winter
 
 const float D_WIN = 0.55;
 const float D_PLANT = 1.05;
@@ -146,6 +149,107 @@ float catT(vec2 l){
   vec2 p = vec2((l.x - cat.x)*cat.w, l.y + WH.y);
   if (abs(p.x) > 0.25 || p.y > 0.3) return 1.0;
   return smoothstep(-0.002, 0.002, catSD(p));
+}
+
+
+// ---------------- pretty things: suncatcher, winter glass, birds, falling petals and leaves ----------------
+const vec2 PRISM_PIVOT = vec2(-0.14, 0.535);
+const float PRISM_LEN = 0.3;
+float prismSwing(){ return 0.045*sin(time*0.57) + 0.02*sin(time*1.31 + 1.0) + gust*0.22*sin(time*2.4); }
+float prismSpin(){ return time*0.09 + 0.9*sin(time*0.05) + gust*1.4*sin(time*1.3); }
+vec2 prismAt(){ float a = prismSwing(); return PRISM_PIVOT + PRISM_LEN*vec2(sin(a), -cos(a)); }
+// light through the hanging crystal and its thread, window coords: glass bends most light away, the facet
+// edges are dark, and a bright knot sits where it focuses
+float prismT(vec2 l, float pen){
+  if (prism <= 0.0) return 1.0;
+  vec2 c = prismAt();
+  vec2 d = rot(prismSwing())*(l - c)/1.5;
+  pen /= 1.5;
+  if (abs(d.x) > 0.05 + pen && sdSeg(l, PRISM_PIVOT, c) > 0.01 + pen) return 1.0;
+  float th = sdSeg(l, PRISM_PIVOT, c + (PRISM_PIVOT - c)*0.13);
+  float T = 1.0 - 0.6*(1.0 - smoothstep(0.0, 0.0012 + pen*1.5, th));
+  float y = d.y;
+  float w = y > 0.0 ? 0.027*sqrt(max(1.0 - pow(y/0.026, 2.0), 0.0)) : 0.027*max(1.0 + y/0.052, 0.0);
+  float e = w - abs(d.x);
+  float inside = smoothstep(-pen, pen, e) * smoothstep(-0.052 - pen, -0.052 + pen, y) * smoothstep(0.026 + pen, 0.026 - pen, y);
+  float spin = prismSpin(), lines = 1.0;
+  for (int k = 0; k < 4; k++) {
+    float fx = w*sin(spin + float(k)*0.785);
+    lines *= smoothstep(0.0, 0.0018 + pen, abs(d.x - fx));
+  }
+  lines *= smoothstep(0.0, 0.0016 + pen, abs(y));
+  float glass = mix(0.05, 0.32, smoothstep(0.0, 0.008 + pen, e))*mix(0.35, 1.0, lines);
+  vec2 f = d - vec2(0.005*sin(spin*2.0), -0.014);
+  glass += 2.4*exp(-dot(f, f)/(0.00003 + pen*pen));
+  return T*mix(1.0, glass, inside*prism);
+}
+vec3 spectral(float x){                 // 0 violet .. 1 red
+  vec3 b = 1.0 - pow((vec3(x) - vec3(0.84, 0.55, 0.25))/vec3(0.32, 0.27, 0.3), vec3(2.0));
+  return max(b, 0.0) + vec3(0.35, 0.0, 0.4)*max(1.0 - x*7.0, 0.0);
+}
+
+// winter glass: frost creeping in from the frame, snow banked on the sill outside
+vec3 winterT(vec2 l){
+  float w = season.w;
+  if (w <= 0.0) return vec3(1.0);
+  vec2 dd = abs(l) - WH;
+  float e = -(length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0));
+  float grow = 0.035 + 0.1*w + 0.05*(fbm(l*9.0) - 0.5);
+  float frost = smoothstep(grow, grow*0.35, e);
+  float fern = smoothstep(0.42, 0.75, fbm(l*34.0 + 3.0*vec2(fbm(l*7.0), fbm(l*7.0 + 4.1))));
+  float T = mix(1.0, 0.42 + 0.45*fern, frost*w);
+  float top = -WH.y + w*(0.035 + 0.025*noise(vec2(l.x*7.0, 1.0)) + 0.01*noise(vec2(l.x*31.0, 3.0)));
+  float snow = smoothstep(0.003, -0.003, l.y - top);
+  return vec3(T*mix(1.0, 0.1, snow))*vec3(1.0, 1.0, 1.0 + 0.04*frost*w);
+}
+
+// birds crossing: a soft V that flaps, in its own plane outside
+float birdSD(vec2 p, float flap){
+  vec2 q = vec2(abs(p.x), p.y);
+  vec2 m = vec2(0.45, 0.1 + 0.35*flap), t = vec2(1.0, flap);
+  float wing = min(sdSeg(q, vec2(0.0), m), sdSeg(q, m, t)) - 0.1*(1.0 - 0.7*clamp(q.x, 0.0, 1.0));
+  return min(wing, sdEll(p - vec2(0.0, -0.03), vec2(0.16, 0.08)));
+}
+float birdsT(vec2 qb, float pen){
+  if (passing.x != 1.0) return 1.0;
+  float T = 1.0, n = 1.0 + floor(passing.z*3.0);
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    if (fi >= n) break;
+    float lag = fi*0.06, s = 0.075*(1.0 - 0.15*fi);
+    float x = mix(-1.3, 1.3, passing.y - lag)*passing.w;
+    float y = WC.y + 0.25 + (passing.z - 0.5)*0.4 + fi*0.06*sin(fi*2.3) + 0.04*sin(passing.y*7.0 + fi);
+    float flap = mix(0.5*sin(time*13.0 + fi*1.9), -0.15, step(0.6, fract(passing.y*2.0 + fi*0.3)));
+    float d = birdSD(vec2((qb.x - WC.x - x)*passing.w, qb.y - y)/s, flap)*s;
+    T *= 1.0 - 0.88*(1.0 - smoothstep(-pen, pen, d));
+  }
+  return T;
+}
+
+// spring petals and autumn leaves drifting down past the window
+vec3 fallT(vec2 qf, float pen){
+  float sp = season.x, au = season.z;
+  if (sp + au <= 0.02) return vec3(1.0);
+  float cell = 0.17;
+  vec2 g = qf/cell + vec2(sin(time*0.13)*0.6 + gust*2.0*sin(time*0.9), time*0.32);
+  vec2 id0 = floor(g);
+  vec3 T = vec3(1.0);
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 id = id0 + vec2(i, j);
+    float h = hash(id*1.37 + 11.0);
+    if (h > 0.2*sp + 0.13*au) continue;
+    float h2 = hash(id + 5.1), h3 = hash(id + 9.7);
+    vec2 c = id + 0.5 + 0.3*vec2(sin(time*(0.8 + h2) + h3*20.0), 0.25*cos(time*0.7 + h2*9.0));
+    vec2 d = (g - c)*cell;
+    d = rot(time*(1.5 + 2.0*h3)*(h2 > 0.5 ? 1.0 : -1.0))*d;
+    bool leaf = hash(id + 2.2) < au/(sp + au);
+    d.x *= 0.45 + 0.55*abs(sin(time*(1.1 + h3) + h2*7.0));   // tumbling, seen edge-on now and then
+    float sd = leaf ? max(sdEll(d, vec2(0.03, 0.016)), -sdEll(d - vec2(0.0, 0.03), vec2(0.03, 0.02))*0.3) : sdEll(d, vec2(0.015, 0.011));
+    float m = 1.0 - smoothstep(-pen, pen, sd);
+    vec3 through = leaf ? vec3(0.16, 0.1, 0.04) : vec3(0.55, 0.36, 0.44);
+    T *= mix(vec3(1.0), through, m);
+  }
+  return T;
 }
 
 // ---------------- stained glass: leaded panes in a few jewel colours, light takes their colour
@@ -365,9 +469,9 @@ vec3 apertureC(vec2 q){
   vec2 l = q - WC;
   vec3 c = vec3(1.0);
   vec2 lw = l + (vec2(noise(q*6.0), noise(q*6.0+7.3)) - 0.5) * 0.007;
-  if (style >= 11) { vec4 h = historic(lw); return h.rgb * h.a * rainT(l) * catT(l); }
+  if (style >= 11) { vec4 h = historic(lw); return h.rgb * h.a * rainT(l) * catT(l) * winterT(l); }
   if (style == 8) c = stained(lw);
-  return c * aperture(q) * rainT(l) * catT(l);
+  return c * aperture(q) * rainT(l) * catT(l) * winterT(l);
 }
 
 float aperture(vec2 q){
@@ -529,10 +633,10 @@ float foliage(vec2 p){
   if (plantType == 3) return palm(p);
   return olive(p);
 }
-vec3 leafTint(){                        // light that gets through a leaf (green, faint)
-  if (plantType == 4) return vec3(0.035, 0.042, 0.026);
-  if (plantType == 3) return vec3(0.03, 0.05, 0.014);
-  return vec3(0.025, 0.048, 0.012);
+vec3 leafTint(){                        // light that gets through a leaf (green, faint; amber in autumn)
+  vec3 t = plantType == 4 ? vec3(0.035, 0.042, 0.026) : plantType == 3 ? vec3(0.03, 0.05, 0.014) : vec3(0.025, 0.048, 0.012);
+  t = mix(t, vec3(0.05, 0.085, 0.02), season.x*0.7);
+  return mix(t, vec3(0.2, 0.1, 0.018), season.z*0.85);
 }
 
 // ---------------- caustics ----------------

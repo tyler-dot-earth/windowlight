@@ -40,6 +40,8 @@
       <button class="big" data-cmd="random all">shuffle now</button>
       <button class="big heart" id="keep">♡ keep</button>
       <button data-cmd="cat">🐈 cat</button>
+      <button data-cmd="bird">🐦 birds</button>
+      <button data-cmd="car">🚗 car</button>
       <button data-cmd="gust 0.9">breeze</button>
       <button data-cmd="now">real sun</button>
       <button id="sleep">sleep</button>
@@ -55,7 +57,8 @@
       <b>plant</b><div class="row" id="plant"></div>
       <b>mood</b><div class="row" id="mood"></div>
       <b>caustic</b><div class="row" id="caustic"></div>
-      <b>rain</b><div class="row"><button id="rain">off</button></div>
+      <b>extras</b><div class="row"><button id="rain">rain</button><button id="prism">suncatcher</button></div>
+      <b>season</b><div class="row" id="season"></div>
     </div>
     <div class="row" style="margin-top:14px">
       <label>tilt <input type="range" id="tilt" min="-80" max="80"><span class="num" id="tiltv"></span></label>
@@ -69,6 +72,7 @@
       <label>shuffle <select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
       <label>from <select id="pool"><option value="all">everything</option><option value="favourites">favourites</option><option value="historic">historic windows</option></select></label>
       <label>time-lapse <select id="timelapse"><option>off</option><option>day/1m</option><option>day/2m</option><option>day/5m</option><option>full/5m</option></select></label>
+      <label>birds/cars every <select id="passevery"><option>off</option><option>1m</option><option>4m</option><option>15m</option></select></label>
       <label>cat every <select id="catevery"><option>off</option><option>2m</option><option>10m</option><option>30m</option><option>1h</option></select></label>
     </div>
   </section>
@@ -92,6 +96,7 @@ document.addEventListener('click', e => { const c = e.target.closest('[data-cmd]
 $('keep').onclick = () => send(st && st.kept ? 'drop' : 'keep');
 $('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
 $('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
+$('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'));
 for (const k of ['tilt', 'facing']) {
   $(k).oninput = () => { dragging = k; $(k + 'v').textContent = $(k).value + '°'; };
   $(k).onchange = () => { dragging = null; send(k + ' ' + $(k).value); };
@@ -102,6 +107,7 @@ $('shuffle').onchange = e => send('set shuffle=' + e.target.value);
 $('pool').onchange = e => send('set pool=' + e.target.value);
 $('timelapse').onchange = e => send(e.target.value == 'off' ? 'now' : 'set timelapse=' + e.target.value);
 $('catevery').onchange = e => send('set cat=' + e.target.value);
+$('passevery').onchange = e => send('set passing=' + e.target.value);
 
 function chips(id, list, cur, cmd = id) {
   const el = $(id);
@@ -118,13 +124,15 @@ async function poll() {
   chips('style', st.choices.style.slice(0, h), st.look.style);
   chips('styleh', st.choices.style.slice(h), st.look.style, 'style');
   for (const k of ['plant', 'mood', 'caustic']) chips(k, st.choices[k], st.look[k]);
-  $('rain').textContent = st.look.rain ? 'on' : 'off'; $('rain').classList.toggle('on', st.look.rain);
+  $('rain').classList.toggle('on', st.look.rain); $('prism').classList.toggle('on', st.look.prism);
+  chips('season', st.choices.season, st.season);
+  for (const b of $('season').children) b.title = b.textContent == 'auto' ? 'follows the date: ' + st.season_now : '';
   for (const k of ['tilt', 'facing']) if (dragging != k) { $(k).value = Math.round(st.look[k]); $(k + 'v').textContent = Math.round(st.look[k]) + '°'; }
   $('keep').textContent = st.kept ? '♥ kept' : '♡ keep'; $('keep').classList.toggle('on', st.kept);
   $('sleep').textContent = st.asleep ? 'wake' : 'sleep';
   if (document.activeElement.tagName != 'SELECT') {
     pickSel($('shuffle'), secs(st.shuffle)); $('pool').value = st.pool;
-    pickSel($('timelapse'), st.timelapse || 'off'); pickSel($('catevery'), secs(st.cat));
+    pickSel($('timelapse'), st.timelapse || 'off'); pickSel($('catevery'), secs(st.cat)); pickSel($('passevery'), secs(st.passing));
   }
   const f = $('favs'); f.innerHTML = '';
   if (!st.favs.length) f.innerHTML = '<div><code>none yet: ♡ keep saves the current look</code></div>';

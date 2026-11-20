@@ -19,10 +19,10 @@ use std::time::Instant;
 
 fn usage() -> ! {
     eprintln!("usage: windowlight run|shot OUT.png|sample N DIR|bench|ctl WORDS...\n\
-  look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --rain on|off --random\n\
-  place:  --lat X --lon Y\n\
+  look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --rain on|off --prism on|off --random\n\
+  place:  --lat X --lon Y --season auto|spring|summer|autumn|winter\n\
   time:   --at 2026-11-19T11:00 --speed X --anim SECONDS\n\
-  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n          --pool all|favourites|historic --cat 10m|off --breeze on|off --ui 7417|off\n\
+  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n          --pool all|favourites|historic --cat 10m|off --passing 4m|off --breeze on|off --ui 7417|off\n\
   stills: --size 1920x1080 --frames 120 (bench)");
     std::process::exit(2)
 }
@@ -42,7 +42,7 @@ fn parse(args: &[String]) -> Cli {
     let mut o = Opts {
         lat: 37.77, lon: -122.42, look: Look::default(), speed: 1.0, at_ms: None, anim: 0.0,
         fps: 30.0, scale: 1.0, output: "DP-2".into(), workspaces: vec![], shuffle_secs: None, size: (1920, 1080), lapse: None,
-        cat_secs: Some(600.0), pool: "all", breeze: true, ui_port: Some(7417),
+        cat_secs: Some(600.0), pool: "all", breeze: true, ui_port: Some(7417), season: None, pass_secs: Some(240.0),
     };
     let (mut pos, mut random, mut frames, mut size_set) = (vec![], false, 120, false);
     let mut i = 0;
@@ -67,6 +67,11 @@ fn parse(args: &[String]) -> Cli {
             "cat" => o.cat_secs = app::parse_secs(v).unwrap_or_else(|| { eprintln!("--cat wants 10m, 1h or off"); std::process::exit(2) }),
             "pool" => o.pool = app::parse_pool(v).unwrap_or_else(|| { eprintln!("--pool wants all, favourites or historic"); std::process::exit(2) }),
             "breeze" => o.breeze = v != "off",
+            "passing" => o.pass_secs = app::parse_secs(v).unwrap_or_else(|| { eprintln!("--passing wants 4m, 1h or off"); std::process::exit(2) }),
+            "season" => o.season = match app::SEASONS.iter().position(|x| x == v) {
+                Some(i) => (i < 4).then_some(i),
+                None => { eprintln!("--season wants auto, spring, summer, autumn or winter"); std::process::exit(2) }
+            },
             "ui" => o.ui_port = if v == "off" { None } else { Some(v.parse().unwrap_or_else(|_| usage())) },
             "size" => {
                 let (w, h) = v.split_once('x').unwrap_or_else(|| usage());

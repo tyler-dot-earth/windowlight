@@ -77,3 +77,19 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - `nouveau`: Art Nouveau stems rising to stylised roses, with leaves and an amber band.
 - `--pool historic` (or `ctl set pool=historic`) makes shuffles draw only from these, and the page has its own row of them.
 - Cost at 4K: 1.1 to 1.6 ms per frame with rain, a plant and both caustics.
+
+## native (round seven: pretty)
+
+- Suncatcher: `--prism on` (or the page toggle) hangs a slowly turning crystal in the window, which throws small rainbow spots around its shadow on the wall.
+- Light shaft and dust: when the sun is out, a faint beam crosses the room with drifting specks in it; haze softens both.
+- Things passing outside: birds fly past by day and car headlights sweep the wall at night, every few minutes on average.
+  - `--passing 4m|off` (or `set passing=`) sets how often, and `ctl bird` / `ctl car` send one now.
+- Seasons follow the date and latitude, or can be pinned with `--season spring|summer|autumn|winter`:
+  - spring drops pink petals and greens the leaves;
+  - autumn turns the leaves amber and drops falling leaves;
+  - winter frosts the glass from the edges and puts snow on the sill.
+- Cost at 4K: about 0.4 ms per frame on top of round six, worst case 2.4 ms.
+- Weak spots:
+  - frost follows the rectangular frame even on arched windows;
+  - snow shows in winter whatever the local climate;
+  - none of this has been watched live yet.

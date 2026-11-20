@@ -45,10 +45,10 @@ impl Mood {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool }
+pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool, pub prism: bool }
 
 impl Default for Look {
-    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false } }
+    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false } }
 }
 
 fn pick(list: &[&str], v: &str) -> Result<usize, String> {
@@ -66,14 +66,15 @@ impl Look {
             "tilt" => self.tilt = v.parse().map_err(|_| format!("bad tilt {v}"))?,
             "facing" => self.facing = v.parse().map_err(|_| format!("bad facing {v}"))?,
             "rain" => self.rain = matches!(v, "on" | "1" | "true" | "yes"),
+            "prism" | "suncatcher" => self.prism = matches!(v, "on" | "1" | "true" | "yes"),
             _ => return Ok(false),
         }
         Ok(true)
     }
     pub fn flags(&self) -> String {
-        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {}",
+        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {} --prism {}",
             STYLES[self.style], PLANTS[self.plant], MOODS[self.mood], CAUSTICS[self.caustic], self.tilt, self.facing,
-            if self.rain { "on" } else { "off" })
+            if self.rain { "on" } else { "off" }, if self.prism { "on" } else { "off" })
     }
     /// a random look; facing stays unless `facing` is given
     pub fn random(rng: &mut Rng, facing: Option<f64>, base: &Look) -> Look {
@@ -81,7 +82,7 @@ impl Look {
         let plant = if rng.f() < 0.12 { 0 } else { 1 + rng.below(4) };
         Look {
             style: rng.below(STYLES.len()), plant, mood: rng.below(MOODS.len()), caustic,
-            tilt: ((12.0 + rng.f() * 50.0) * if rng.f() < 0.5 { -1.0 } else { 1.0 }).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15,
+            tilt: ((12.0 + rng.f() * 50.0) * if rng.f() < 0.5 { -1.0 } else { 1.0 }).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15, prism: rng.f() < 0.3,
         }
     }
     /// a look from flags like the ones flags() prints; unknown flags are ignored

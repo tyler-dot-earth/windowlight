@@ -21,10 +21,11 @@ pub struct Frame {
     pub time: f32, pub style: i32, pub plant: i32, pub caustic: i32, pub tilt: f32,
     pub sun: [f32; 3], pub sun_alt: f32, pub mood: Mood, pub fade: f32,
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
+    pub prism: f32, pub passing: [f32; 4], pub season: [f32; 4],
 }
 
 /// per-scene textures (two scenes exist while crossfading)
-pub struct SceneTex { ap: Target, fol: Target, caus: Target, ap_key: Option<(i32, i32, bool)> }
+pub struct SceneTex { ap: Target, fol: Target, caus: Target, ap_key: Option<(i32, i32, bool, i32)> }
 
 pub struct Renderer {
     pub gl: glow::Context,
@@ -112,6 +113,9 @@ impl Renderer {
         gl.uniform_1_f32(u("rain").as_ref(), f.rain);
         gl.uniform_1_f32(u("gust").as_ref(), f.gust);
         gl.uniform_4_f32_slice(u("cat").as_ref(), &f.cat);
+        gl.uniform_1_f32(u("prism").as_ref(), f.prism);
+        gl.uniform_4_f32_slice(u("passing").as_ref(), &f.passing);
+        gl.uniform_4_f32_slice(u("season").as_ref(), &f.season);
     }
 
     /// draw a fullscreen pass of `p` into `t` (or the given framebuffer), then rebuild mips
@@ -134,7 +138,7 @@ impl Renderer {
         // window light: only when the style or tilt changes, or every frame while something on the glass moves
         // (the sheer curtain, rain, or the cat)
         let moving = f.cat[3] != 0.0;
-        let key = (f.style, (f.tilt * 1000.0) as i32, moving);
+        let key = (f.style, (f.tilt * 1000.0) as i32, moving, (f.season[3] * 64.0) as i32);
         if s.ap_key != Some(key) || f.style == 6 || f.rain > 0.0 || moving { self.pass(self.p_ap, &s.ap, Some(f)); s.ap_key = Some(key); }
         if f.plant > 0 { self.pass(self.p_fol, &s.fol, Some(f)); }
         let pool = f.caustic == 1 || f.caustic == 3;

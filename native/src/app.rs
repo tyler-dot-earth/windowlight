@@ -2,6 +2,7 @@
 // and wake/sleep fades.
 use crate::gfx::{Frame, Renderer, SceneTex};
 use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, MOODS, PLANTS, STYLES};
+pub const SEASONS: [&str; 5] = ["spring", "summer", "autumn", "winter", "auto"];
 use crate::sun;
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,8 @@ pub struct Opts {
     pub lat: f64, pub lon: f64, pub look: Look, pub speed: f64, pub at_ms: Option<f64>, pub anim: f64,
     pub fps: f64, pub scale: f64, pub output: String, pub workspaces: Vec<usize>, pub shuffle_secs: Option<f64>, pub size: (i32, i32), pub lapse: Option<String>,
     pub cat_secs: Option<f64>, pub pool: &'static str, pub breeze: bool, pub ui_port: Option<u16>,
+    /// a fixed season (index into SEASONS), or None to follow the date
+    pub season: Option<usize>, pub pass_secs: Option<f64>,
 }
 
 #[derive(Clone, Copy)]
@@ -28,14 +31,15 @@ fn secs(now: Instant, t0: Instant) -> f64 { now.saturating_duration_since(t0).as
 
 /// the parts of a look that can glide from one value to the next
 #[derive(Clone, Copy)]
-struct Cont { mood: Mood, tilt: f64, facing: f64, rain: f64 }
+struct Cont { mood: Mood, tilt: f64, facing: f64, rain: f64, prism: f64 }
 impl Cont {
-    fn of(l: &Look) -> Cont { Cont { mood: Mood::named(l.mood), tilt: l.tilt, facing: l.facing, rain: if l.rain { 1.0 } else { 0.0 } } }
+    fn of(l: &Look) -> Cont { Cont { mood: Mood::named(l.mood), tilt: l.tilt, facing: l.facing, rain: if l.rain { 1.0 } else { 0.0 }, prism: if l.prism { 1.0 } else { 0.0 } } }
     fn lerp(&self, o: &Cont, k: f64) -> Cont {
         let turn = (o.facing - self.facing + 540.0).rem_euclid(360.0) - 180.0;   // the short way round
         Cont {
             mood: self.mood.lerp(&o.mood, k as f32), tilt: self.tilt + (o.tilt - self.tilt) * k,
             facing: (self.facing + turn * k).rem_euclid(360.0), rain: self.rain + (o.rain - self.rain) * k,
+            prism: self.prism + (o.prism - self.prism) * k,
         }
     }
 }
@@ -96,6 +100,20 @@ impl CatWalk {
     }
 }
 
+/// something going past outside: birds across the light by day, a car's headlights by night
+#[derive(Clone, Copy)]
+struct Passing { t0: Instant, kind: f64, dur: f64, seed: f64, dir: f64 }
+impl Passing {
+    fn new(rng: &mut Rng, now: Instant, car: bool) -> Passing {
+        Passing { t0: now, kind: if car { 2.0 } else { 1.0 }, dur: if car { 4.5 } else { 2.4 + rng.f() * 1.2 }, seed: rng.f(),
+                  dir: if rng.f() < 0.5 { 1.0 } else { -1.0 } }
+    }
+    fn at(&self, now: Instant) -> Option<[f32; 4]> {
+        let k = secs(now, self.t0) / self.dur;
+        (k < 1.0).then_some([self.kind as f32, k as f32, self.seed as f32, self.dir as f32])
+    }
+}
+
 pub struct App {
     pub o: Opts,
     start: Instant,
@@ -114,6 +132,7 @@ pub struct App {
     lapse: Option<Lapse>,
     gust_from: f64, gust_peak: f64, gust_t0: Instant,
     cat: Option<CatWalk>, next_cat: Instant,
+    passing: Option<Passing>, next_pass: Instant,
     /// a clock jump waiting for the cloud to cover it
     jump: Option<f64>,
 }
@@ -147,10 +166,11 @@ impl App {
             cur: r.scene_tex(), c_from: c, c_to: c, c_k: Tween::still(1.0), cloud: None,
             fade: Tween::still(1.0), warp_min: Tween::still(0.0), asleep: false,
             rng: Rng::seeded(), last_shuffle: now, lapse: None,
-            gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, jump: None, o,
+            gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, jump: None, o,
         };
         // the first cat comes along a minute or three in, then about every --cat
         a.next_cat = now + Duration::from_secs_f64(60.0 + a.rng.f() * 120.0);
+        a.next_pass = now + Duration::from_secs_f64(30.0 + a.rng.f() * 90.0);
         if let Some(spec) = a.o.lapse.clone() {
             if let Err(e) = a.set_lapse(&spec) { eprintln!("{e}"); std::process::exit(2); }
         }
@@ -209,7 +229,23 @@ impl App {
             tilt: c.tilt.to_radians() as f32, sun: sun::room_vec(alt, az, c.facing), sun_alt: alt as f32,
             mood, fade: (self.fade.at(now) * self.lapse.map_or(1.0, |l| l.edge(now))) as f32,
             rain: c.rain as f32, gust: self.gust(now) as f32, cat: self.cat_vec(now), light_k: lk as f32,
+            prism: c.prism as f32, passing: self.passing.and_then(|p| p.at(now)).unwrap_or([0.0; 4]), season: self.season(now),
         }
+    }
+
+    fn season(&self, now: Instant) -> [f32; 4] {
+        match self.o.season {
+            Some(i) if i < 4 => { let mut w = [0.0; 4]; w[i] = 1.0; w }
+            _ => sun::seasons(self.sim_ms(now), self.o.lat),
+        }
+    }
+
+    /// birds by day, a car by night, nothing in the twilight between
+    fn send_past(&mut self, now: Instant) -> Option<bool> {
+        let alt = sun::position(self.sim_ms(now), self.o.lat, self.o.lon).0.to_degrees();
+        let car = if alt > 4.0 { false } else if alt < -4.0 { true } else { return None };
+        self.passing = Some(Passing::new(&mut self.rng, now, car));
+        Some(car)
     }
 
     /// head for a new look: colours, tilt, facing and rain glide there; a new window, plant or
@@ -257,6 +293,14 @@ impl App {
                 self.next_cat = now + Duration::from_secs_f64(gap);
             }
         }
+        if let Some(p) = self.passing { if p.at(now).is_none() { self.passing = None; } }
+        if let Some(every) = self.o.pass_secs {
+            if self.passing.is_none() && self.cat.is_none() && now >= self.next_pass {
+                self.send_past(now);
+                let gap = (-every * (1.0 - self.rng.f()).ln()).clamp(20.0, every * 4.0);
+                self.next_pass = now + Duration::from_secs_f64(gap);
+            }
+        }
         let f = self.frame(now);
         r.draw(&mut self.cur, &f, fb, w, h, 1.0);
         if self.fade.to == 0.0 && self.fade.done(now) { self.asleep = true; }
@@ -286,13 +330,14 @@ impl App {
         let key = fav_key(l);
         serde_json::json!({
             "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "mood": MOODS[l.mood], "caustic": CAUSTICS[l.caustic],
-                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain },
+                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism },
             "flags": l.flags(), "clock": self.clock(now), "asleep": self.asleep || self.fade.to == 0.0,
             "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": self.o.pool,
-            "cat": self.o.cat_secs, "cat_now": self.cat.is_some(),
+            "cat": self.o.cat_secs, "cat_now": self.cat.is_some(), "passing": self.o.pass_secs,
+            "season": SEASONS[self.o.season.unwrap_or(4)], "season_now": SEASONS[self.season(now).iter().enumerate().fold(0, |b, (i, x)| if *x > self.season(now)[b] { i } else { b })],
             "kept": favs.iter().any(|f| Look::from_flags(f).map(|x| fav_key(&x)) == Some(key.clone())),
             "favs": favs,
-            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "caustic": CAUSTICS },
+            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "caustic": CAUSTICS, "season": SEASONS },
         }).to_string()
     }
 }
@@ -353,7 +398,7 @@ impl App {
                 self.set_look(next, now);
                 self.look.flags()
             }
-            "set" | "mood" | "style" | "plant" | "caustic" | "tilt" | "facing" | "rain" => {
+            "set" | "mood" | "style" | "plant" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "season" => {
                 let pairs: Vec<(String, String)> = if cmd == "set" {
                     rest.iter().filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect()
                 } else {
@@ -364,8 +409,13 @@ impl App {
                     match next.set(&k, &v) {
                         Ok(true) => {}
                         Ok(false) if k == "timelapse" => if let Err(e) = self.set_lapse(&v) { return format!("error: {e}"); },
-                        Ok(false) if k == "shuffle" || k == "cat" => match parse_secs(&v) {
+                        Ok(false) if k == "season" => match SEASONS.iter().position(|x| *x == v) {
+                            Some(i) => self.o.season = (i < 4).then_some(i),
+                            None => return "error: season wants auto, spring, summer, autumn or winter".into(),
+                        },
+                        Ok(false) if k == "shuffle" || k == "cat" || k == "passing" => match parse_secs(&v) {
                             Some(s) if k == "shuffle" => { self.o.shuffle_secs = s; self.last_shuffle = now; }
+                            Some(s) if k == "passing" => { self.o.pass_secs = s; if let Some(s) = s { self.next_pass = now + Duration::from_secs_f64(s.min(300.0) * self.rng.f()); } }
                             Some(s) => {
                                 self.o.cat_secs = s;
                                 if let Some(s) = s { self.next_cat = now + Duration::from_secs_f64(s.min(600.0) * self.rng.f()); }
@@ -414,6 +464,18 @@ impl App {
                 self.cat = Some(CatWalk::new(&mut self.rng, now));
                 "here comes the cat".into()
             }
+            "bird" | "birds" | "car" | "passing" => {
+                if self.passing.is_some() { return "something is already going past".into(); }
+                match (cmd, self.send_past(now)) {
+                    (_, None) => "too dim out for birds and too light for headlights; try at day or night".into(),
+                    ("car", Some(false)) | ("bird" | "birds", Some(true)) => {
+                        self.passing = None;
+                        format!("no {cmd}s now: birds show by day, headlights by night")
+                    }
+                    (_, Some(true)) => "a car goes by".into(),
+                    (_, Some(false)) => "birds fly past".into(),
+                }
+            }
             "keep" => {
                 let mut favs = load_favs();
                 let key = fav_key(&self.look);
@@ -461,8 +523,8 @@ impl App {
             }
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
-            _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off) \
-                  | mood/style/plant/caustic/tilt/facing/rain VALUE | keep | drop [N] | favs | fav N | cat | gust [0..1] | now | sleep | wake | get | state".into(),
+            _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
+                  | mood/style/plant/caustic/tilt/facing/rain/prism/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | now | sleep | wake | get | state".into(),
         }
     }
 }
