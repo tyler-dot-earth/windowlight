@@ -45,6 +45,19 @@ vec2 planeQ(vec3 p, vec3 pcw, vec3 n, vec3 ua, vec3 L, float ns, float D, float 
   return vec2(dot(ua, h), h.y) - (vec2(dot(ua, hc), hc.y) - WC)*k;
 }
 
+// a flame's flicker, 0..1: a fast flutter on a slower breath. t wraps so the noise keeps its precision
+float flick(float t, float s){
+  return 0.5*noise(vec2(t*7.0, s)) + 0.3*noise(vec2(t*17.0, s + 7.0)) + 0.2*noise(vec2(t*1.9, s + 3.0));
+}
+// how much of a near light at e the plant lets through to wall point p0, its leaves filling the plane z = 0.2
+// shifted by at (plant-plane coords minus room coords); sz is the size of the flame
+float lampLeaf(vec3 p0, vec3 e, float sz, vec2 at){
+  if (plantType == 0) return 1.0;
+  const float ZP = 0.2;
+  vec2 hit = mix(p0.xy, e.xy, ZP/e.z);
+  return 1.0 - 0.85*softFol(hit + at, 0.004 + sz*ZP/(e.z - ZP));
+}
+
 void main(){
   vec2 fc = gl_FragCoord.xy;
   jit = hash(fc)*6.2831;
@@ -210,6 +223,67 @@ void main(){
         col += wall*c*li*(1.0 - 0.9*fol)*on*mix(0.75, 0.16, day)*lampK;
       }
       col += wall*vec3(0.45, 0.4, 0.7)*0.03*lampK*(1.0 - 0.8*day);
+    } else if (lamp >= 7) {
+      // flames. Each flickers and its flame wanders, so whatever shadow it throws breathes and shifts
+      float tf = mod(time, 1000.0);
+      vec3 fire = vec3(1.0, 0.5, 0.16);
+      float dim = mix(1.0, 0.4, day)*lampK;
+      if (lamp == 7) {
+        // a candle on the sill just under the plant: small, low and close, so the plant's shadow climbs the wall
+        float g = flick(tf, 1.0);
+        float draught = smoothstep(0.72, 0.92, noise(vec2(tf*0.35, 9.0)));
+        vec3 e = vec3(0.3 + 0.008*(g - 0.5) + 0.05*draught*(noise(vec2(tf*6.0, 4.0)) - 0.5), -0.05 + 0.006*g, 0.5);
+        float k = (0.84 + 0.16*g)*(1.0 - 0.45*draught*noise(vec2(tf*13.0, 2.0)));
+        vec3 d = e - p0; float r2 = dot(d, d);
+        col += wall*fire*max(d.z, 0.0)*inversesqrt(r2)/r2*lampLeaf(p0, e, 0.004, vec2(0.12, 0.1))*k*0.1*dim;
+        col += fire*exp(-9.0*length(uv - e.xy))*(0.05 + 0.05*haze)*k*dim;
+      } else if (lamp == 8) {
+        // a pierced tin lantern hung off to one side: its flame shines through rows of holes, a field of dots
+        // across the wall that sways a little as the flame moves
+        float g = flick(tf, 3.0);
+        vec2 sway = vec2(noise(vec2(tf*0.6, 1.0)), noise(vec2(tf*0.5, 6.0))) - 0.5;
+        vec3 e = vec3(0.45 + 0.01*sway.x, 0.9, 0.45);
+        vec3 d = p0 - e; float r2 = dot(d, d);
+        float az = atan(d.x, -d.z), up = d.y/length(d.xz);
+        vec2 gv = vec2(az*16.0/PI, up*3.6 + 0.08*sway.y + 0.03*(g - 0.5));
+        float row = floor(gv.y);
+        gv.x += 0.5*mod(row, 2.0) + 0.06*sway.x;
+        vec2 f = fract(gv) - 0.5;
+        float big = mod(row, 2.0) < 0.5 ? 0.2 : 0.13;
+        float holes = smoothstep(big, big*0.55, length(f*vec2(1.0, 1.25)))*step(-8.0, gv.y)*step(gv.y, 4.0);
+        float k = 0.78 + 0.22*g;
+        col += wall*fire*max(-d.z, 0.0)*inversesqrt(r2)/r2*(0.04 + holes)*lampLeaf(p0, e, 0.006, vec2(0.12, 0.1))*k*0.2*dim;
+        col += fire*exp(-12.0*length(uv - e.xy))*(0.06 + 0.06*haze)*k*dim;
+      } else if (lamp == 9) {
+        // a fireplace low and off to the left, out of sight: three tongues of flame, each with its own flicker, so the plant's
+        // shadow comes up the wall in several soft copies that dance against each other
+        vec3 tot = vec3(0.0);
+        for (int i = 0; i < 3; i++) {
+          float fi = float(i), g = flick(tf, 11.0 + fi*5.0);
+          vec3 e = vec3(-1.45 + (fi - 1.0)*0.16 + 0.05*(noise(vec2(tf*3.0, fi)) - 0.5), -0.5 + 0.1*g, 1.0);
+          vec3 d = e - p0; float r2 = dot(d, d);
+          // brighter tongues burn yellower
+          tot += mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.68, 0.3), g)*(0.35 + 0.9*g)*max(d.z, 0.0)*inversesqrt(r2)/r2*lampLeaf(p0, e, 0.012, vec2(0.12, 0.1));
+        }
+        col += wall*tot*0.45*dim;
+        col += vec3(1.0, 0.36, 0.08)*smoothstep(0.6, -0.4, uv.y)*smoothstep(0.9, -0.6, uv.x - WC.x)*0.05*dim;
+      } else {
+        // a bonfire out in the yard, low and far: it throws the window up the wall in orange, wavering through
+        // the heat rising off it
+        float g = flick(tf, 21.0);
+        vec3 Ln = normalize(vec3(0.12 + 0.03*(noise(vec2(tf*1.3, 8.0)) - 0.5), -0.16, 1.0));
+        float nn = dot(n, Ln);
+        if (nn > 0.05) {
+          vec3 hn = p0 + (D_WIN - dot(n, p0))/nn*Ln;
+          vec2 q = vec2(dot(ua, hn), hn.y);
+          q += 0.006*(vec2(noise(q*vec2(14.0, 6.0) + vec2(0.0, -tf*2.2)), noise(q*vec2(14.0, 6.0) + vec2(5.0, -tf*2.6))) - 0.5);
+          vec3 li = softAp(q, 0.03 + 0.03*haze);
+          float fol = 0.0;
+          if (plantType > 0) { vec3 hp = p0 + (D_PLANT - dot(n, p0))/nn*Ln; fol = softFol(vec2(dot(ua, hp), hp.y), 0.03); }
+          col += wall*mix(vec3(1.0, 0.32, 0.07), vec3(1.0, 0.6, 0.24), g)*li*(1.0 - 0.9*fol)*(0.45 + 0.55*g)*mix(0.8, 0.12, day)*lampK;
+        }
+        col += wall*vec3(1.0, 0.4, 0.12)*smoothstep(1.0, -0.3, uv.y)*0.03*(0.6 + 0.4*g)*lampK*(1.0 - 0.8*day);
+      }
     } else {
       // where the fixture hangs (above the frame, out from the wall) and the plane its plant's leaves fill
       const float ZP = 0.2;

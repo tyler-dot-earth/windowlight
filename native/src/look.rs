@@ -6,9 +6,10 @@ pub const HISTORIC: usize = 11;
 pub const PLANTS: [&str; 5] = ["none", "ficus", "monstera", "palm", "olive"];
 pub const MOODS: [&str; 8] = ["linen", "terracotta", "sage", "nocturne", "blush", "concrete", "overcast", "noir"];
 pub const CAUSTICS: [&str; 4] = ["none", "pool", "glass", "both"];
-/// a light of its own: a neon sign across the street, or a grow light over the plant
-/// (sodium and halide are the two HIDs; blurple is red and blue diodes; t5 is a row of fluorescent tubes)
-pub const LAMPS: [&str; 7] = ["none", "neon", "sodium", "halide", "blurple", "full-spectrum", "t5"];
+/// a light of its own: a neon sign across the street, a grow light over the plant, or a flame
+/// (sodium and halide are the two HIDs; blurple is red and blue diodes; t5 is a row of fluorescent tubes;
+/// then a candle under the plant, a pierced tin lantern, a fireplace and a bonfire in the yard)
+pub const LAMPS: [&str; 11] = ["none", "neon", "sodium", "halide", "blurple", "full-spectrum", "t5", "candle", "lantern", "fireplace", "bonfire"];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mood {

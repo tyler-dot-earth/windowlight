@@ -140,6 +140,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - A lamp gives the room a light of its own: `--lamp`, `ctl lamp NAME`, or the lamp row in the room card.
   - `neon` is a pink and teal sign across the street; each tube throws the window onto the wall, brightest after dark, and the teal one stutters now and then.
   - The rest are grow lights hung over the plant, each throwing its own plant shadow down the wall: `sodium` and `halide` are the two HIDs (amber and cool white, sharp shadows), `blurple` is red and blue diodes (shadows with red and blue fringes), `full-spectrum` is a warm-white LED panel (soft shadows) and `t5` is a row of tubes (a shadow per tube).
+  - Four flames flicker, each with a flame that wanders so its shadows breathe: `candle` sits just under the plant and throws its shadow up the wall, shivering when a draught catches it; `lantern` is pierced tin, a field of swaying dots; `fireplace` is low and off to the left, several dancing plant shadows in a warm wash; `bonfire` is out in the yard, throwing the window up the wall in orange, wavering through the heat.
   - Shuffles turn one on about one look in eight; looks saved before lamps existed come back with none.
 
 ## Setup with Nix
