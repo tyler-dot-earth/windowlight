@@ -194,6 +194,213 @@ float seedShadow(vec2 p, vec3 L, float hz){
   return sh;
 }
 
+// a floating oak shelf in front of the wall, with a glass of water on it and a small round mirror on a stand
+// turned toward the window, so it throws a second little sun onto the wall
+const vec2 SH_X = vec2(-0.44, 0.40), SH_Y = vec2(0.07, 0.10); const float SH_D = 0.17;
+const vec3 GL_C = vec3(0.17, 0.10, 0.085); const float GL_R = 0.034, GL_H = 0.105, GL_W = 0.062;
+const vec3 MI_C = vec3(-0.2, 0.19, 0.075); const float MI_R = 0.056;
+const vec3 MI_N = vec3(-0.540, 0.420, 0.730);
+vec3 gLc = vec3(0.0); float gStr = 0.0; vec3 gTSh = vec3(1.0);
+
+// the light that reaches point P in the room from the window: the opening, the plant's leaves, the tree
+vec3 sunAt(vec3 P, vec3 n, vec3 ua, vec3 L, float ns, vec3 pcw, float hz){
+  float tw = (D_WIN - dot(n, P))/ns;
+  vec3 H = P + tw*L;
+  vec3 a = softAp(vec2(dot(ua, H), H.y), (0.004 + 0.004*tw)*hz);
+  if (plantType > 0) {
+    float tp = (D_PLANT - dot(n, P))/ns;
+    a *= mix(vec3(1.0), leafTint(), softFol(planeQ(P, pcw, n, ua, L, ns, D_PLANT, 0.8), (0.003 + 0.006*tp)*hz)*(0.95 - 0.45*haze));
+  }
+  if (treeType > 0) a *= mix(gTSh, vec3(1.0), texture(uDap, (planeQ(P, pcw, n, ua, L, ns, D_TREE, 0.96) - TREE_MIN)/TREE_SIZE).r);
+  return a;
+}
+// how much sun the shelf, the glass and the mirror let through to point P. The glass of water is a fat lens:
+// it pulls the light from its edges into one bright line down the middle of its shadow
+vec3 objT(vec3 P, vec3 L, float hz){
+  vec3 T = vec3(1.0);
+  if (L.y > 0.01 && P.y < SH_Y.x) {
+    float t = (0.5*(SH_Y.x + SH_Y.y) - P.y)/L.y;
+    vec3 X = P + t*L; float pen = 0.0047*t*hz + 0.0012;
+    float inside = min(min(X.x - SH_X.x, SH_X.y - X.x), min(X.z, SH_D - X.z));
+    T *= 1.0 - smoothstep(-pen, pen, inside);
+  }
+  vec2 Lh = L.xz; float l2 = max(dot(Lh, Lh), 1e-4);
+  vec2 Ph = P.xz - GL_C.xz;
+  float tc = -dot(Ph, Lh)/l2;
+  if (tc > 0.0) {
+    float y = P.y + tc*L.y - GL_C.y;
+    float b = (Ph.x*Lh.y - Ph.y*Lh.x)*inversesqrt(l2)/GL_R;
+    float pen = (0.0047*tc*hz + 0.001)/GL_R, ab = abs(b);
+    float hgt = smoothstep(-pen*GL_R, pen*GL_R, y)*smoothstep(GL_H + pen*GL_R, GL_H - pen*GL_R, y);
+    if (hgt > 0.0 && ab < 1.3) {
+      float body = smoothstep(1.0 + pen, 1.0 - pen, ab);
+      float behind = tc*sqrt(l2)/GL_R;
+      float w = 0.06 + 0.3*abs(behind - 1.8)/1.8 + pen;
+      vec3 gw = vec3(1.0 - body*0.9*smoothstep(0.25, 0.9, ab) + body*exp(-pow(b/w, 2.0))*(0.3/w));
+      gw *= 1.0 - 0.55*body*exp(-pow((y - GL_W)/(0.0025 + pen*GL_R), 2.0));
+      gw *= vec3(0.95, 1.0, 0.97);
+      vec3 ge = vec3(1.0 - 0.4*exp(-pow((ab - 0.95)/(0.05 + pen), 2.0)));
+      vec3 g = mix(gw, ge, smoothstep(GL_W - 0.0015 - pen*GL_R, GL_W + 0.0015 + pen*GL_R, y));
+      g *= 1.0 - 0.4*smoothstep(0.012, 0.006, y)*body;
+      T *= mix(vec3(1.0), g, hgt);
+    }
+  }
+  float dl = dot(L, MI_N);
+  if (abs(dl) > 0.02) {
+    float t = dot(MI_C - P, MI_N)/dl;
+    if (t > 0.0) {
+      float pen = 0.0047*t*hz + 0.001;
+      T *= smoothstep(MI_R + 0.005 - pen, MI_R + 0.005 + pen, length(P + t*L - MI_C));
+    }
+  }
+  return T;
+}
+// the sun the mirror bounces onto wall point P, and which way it was going
+vec3 mirrorSpot(vec3 P, vec3 L, float hz, vec3 n, vec3 ua, float ns, vec3 pcw, out vec3 o){
+  o = reflect(-L, MI_N);
+  float dl = dot(L, MI_N);
+  if (dl <= 0.0 || o.z > -0.01) return vec3(0.0);
+  float t = dot(MI_C - P, MI_N)/-dl;
+  if (t <= 0.0) return vec3(0.0);
+  vec3 X = P - t*o;
+  float pen = 0.0047*t*hz + 0.0008;
+  float disc = smoothstep(MI_R + pen, MI_R - pen, length(X - MI_C));
+  if (disc <= 0.0) return vec3(0.0);
+  return disc*sunAt(X, n, ua, L, ns, pcw, hz)*objT(X + MI_N*0.003, L, hz);
+}
+// a ray from the eye (t = 1 at the wall) meeting an upright cylinder's side, or its top if capped
+float vcyl(vec3 E, vec3 D, vec3 base, float r, float h, bool cap, out vec3 N){
+  vec2 o = E.xz - base.xz, d = D.xz;
+  float A = dot(d, d), B = dot(o, d), C = dot(o, o) - r*r, k = B*B - A*C;
+  N = vec3(0.0);
+  if (k < 0.0) return 1e9;
+  float t = (-B - sqrt(k))/A, y = E.y + t*D.y - base.y;
+  if (t > 0.0 && y > 0.0 && y < h) { N = vec3((o + t*d)/r, 0.0).xzy; return t; }
+  if (cap && D.y < 0.0) {
+    float tt = (base.y + h - E.y)/D.y;
+    vec3 P = E + tt*D;
+    if (tt > 0.0 && length(P.xz - base.xz) < r) { N = vec3(0.0, 1.0, 0.0); return tt; }
+  }
+  return 1e9;
+}
+
+// the shelf and what stands on it, seen along eye ray E + t*Dd (t = 1 at the wall): each lit by the room,
+// by any lamp (judged from what it adds to the wall behind), and by the sun through the window
+vec3 shelfLook(vec3 E, vec3 Dd, vec3 bg, vec3 amb, vec3 lampI, vec3 L, vec3 n, vec3 ua, float ns, vec3 pcw, float hz, bool isSun){
+    vec3 sunC = gLc*gStr;
+    vec3 V = -normalize(Dd);
+    vec3 obj = bg; float tHit = 1.0;
+    // the board
+    vec3 inv = 1.0/Dd;
+    vec3 b0 = (vec3(SH_X.x, SH_Y.x, 0.0) - E)*inv, b1 = (vec3(SH_X.y, SH_Y.y, SH_D) - E)*inv;
+    vec3 tmn = min(b0, b1), tmx = max(b0, b1);
+    float tn = max(max(tmn.x, tmn.y), tmn.z), tf = min(min(tmx.x, tmx.y), tmx.z);
+    if (tn < tf && tn > 0.0) {
+      tHit = tn; vec3 P = E + tn*Dd;
+      vec3 N = tn == tmn.x ? vec3(-sign(Dd.x), 0.0, 0.0) : tn == tmn.y ? vec3(0.0, -sign(Dd.y), 0.0) : vec3(0.0, 0.0, 1.0);
+      vec2 gq = N.y != 0.0 ? vec2(P.x*1.6, P.z*48.0) : vec2(P.x*1.6, P.y*48.0);
+      float g = fbm(gq + vec2(0.0, 1.2*fbm(gq*vec2(2.5, 0.15))));
+      vec3 wood = mix(vec3(0.32, 0.18, 0.085), vec3(0.2, 0.105, 0.045), smoothstep(0.3, 0.75, g));
+      // the corners of the board are eased, so the front edge catches a thin line of light
+      float edge = N.z > 0.5 ? smoothstep(0.004, 0.0, min(P.y - SH_Y.x, SH_Y.y - P.y)) : 0.0;
+      float face = N.y > 0.5 ? 1.1 : N.y < -0.5 ? 0.45 : 0.8;
+      float ao = N.y != 0.0 ? 0.5 + 0.5*smoothstep(0.0, 0.06, P.z) : 1.0;
+      if (N.y > 0.5) {   // where things stand, a little contact shade
+        ao *= 1.0 - 0.45*smoothstep(GL_R + 0.012, GL_R, length(P.xz - GL_C.xz));
+        ao *= 1.0 - 0.4*smoothstep(0.03, 0.02, length(P.xz - vec2(MI_C.x, MI_C.z - 0.012)));
+      }
+      vec3 irr = (amb*face + lampI*0.7*face)*ao;
+      float cs = dot(N, L);
+      if (cs > 0.0 && gStr > 0.0) {
+        vec3 s = sunAt(P, n, ua, L, ns, pcw, hz)*objT(P + N*0.001, L, hz);
+        irr += sunC*s*smoothstep(0.0, 0.12, cs)*(0.4 + 0.6*cs)*(1.0 + 0.6*edge);
+        obj = wood*irr + sunC*s*pow(max(dot(N, normalize(L + V)), 0.0), 50.0)*0.08;
+      } else obj = wood*irr;
+    }
+    // the mirror's foot and stem, brass
+    vec3 Nb; vec3 brass = vec3(0.5, 0.33, 0.12);
+    float tb = vcyl(E, Dd, vec3(MI_C.x, SH_Y.y, MI_C.z - 0.012), 0.022, 0.005, true, Nb);
+    vec3 Nr; float tr = vcyl(E, Dd, vec3(MI_C.x, SH_Y.y, MI_C.z - 0.012), 0.0035, MI_C.y - SH_Y.y - MI_R*0.6, false, Nr);
+    if (tr < tb) { tb = tr; Nb = Nr; }
+    if (tb < tHit) {
+      tHit = tb; vec3 P = E + tb*Dd;
+      float cs = max(dot(Nb, L), 0.0);
+      vec3 s = gStr > 0.0 ? sunAt(P, n, ua, L, ns, pcw, hz)*objT(P + Nb*0.001, L, hz) : vec3(0.0);
+      vec3 Hh = normalize(L + V);
+      obj = brass*(amb*0.8 + lampI*0.6 + sunC*s*cs*0.8) + sunC*s*brass*pow(max(dot(Nb, Hh), 0.0), 40.0)*1.5 + amb*0.15*brass*pow(1.0 - max(dot(Nb, V), 0.0), 3.0);
+    }
+    // the mirror: a brass rim round a glass that shows the wall beside it, or the window, or the sun itself
+    float dn = dot(Dd, MI_N);
+    if (dn < 0.0) {
+      float tm = dot(MI_C - E, MI_N)/dn;
+      vec3 Pm = E + tm*Dd; float r = length(Pm - MI_C);
+      if (tm > 0.0 && tm < tHit && r < MI_R + 0.006) {
+        tHit = tm;
+        vec3 s = gStr > 0.0 ? sunAt(Pm, n, ua, L, ns, pcw, hz)*objT(Pm + MI_N*0.002, L, hz) : vec3(0.0);
+        if (r > MI_R) {
+          // the rim is rounded: its normal turns outward toward the edge
+          vec3 out_ = normalize(Pm - MI_C);
+          vec3 Nm = normalize(MI_N + out_*((r - MI_R)/0.006*2.0 - 1.0)*0.9);
+          vec3 Hh = normalize(L + V);
+          obj = brass*(amb*0.8 + lampI*0.6 + sunC*s*max(dot(Nm, L), 0.0)*0.8) + sunC*s*brass*pow(max(dot(Nm, Hh), 0.0), 60.0)*2.0;
+        } else {
+          vec3 R = reflect(-V, MI_N);
+          // the room behind us: walls like this one, lit by the room and by the sun bouncing off the patch
+          vec3 refl = pow(wallA, vec3(2.2))*(amb*(1.0 + 0.3*R.y) + lampI*0.5 + sunC*0.05);
+          if (R.z < -0.01) {
+            vec3 Q = Pm - Pm.z/R.z*R;
+            vec3 wq = pow(wallA, vec3(2.2));
+            refl = wq*(amb + lampI*0.8);
+            if (gStr > 0.0) refl += wq*sunC*sunAt(Q, n, ua, L, ns, pcw, hz)*objT(Q, L, hz)*(0.4 + 0.6*L.z);
+          } else {
+            float tw = (D_WIN - dot(n, Pm))/dot(n, R);
+            if (tw > 0.0) {
+              vec3 Hw = Pm + tw*R;
+              float open = dot(textureLod(uAp, apUV(vec2(dot(ua, Hw), Hw.y)), 2.0).rgb, vec3(0.3333));
+              refl = mix(refl, (isSun ? vec3(0.55, 0.68, 0.9)*gStr*0.5 : amb*0.6), open);
+            }
+          }
+          refl += sunC*s*pow(max(dot(R, L), 0.0), 4000.0)*30.0;
+          obj = refl*0.88*vec3(0.97, 1.0, 0.99);
+          // the bevel round the glass
+          obj *= 1.0 - 0.3*smoothstep(MI_R - 0.004, MI_R, r);
+        }
+      }
+    }
+    // the glass of water, in front of whatever is behind it
+    vec3 Ng; float tg = vcyl(E, Dd, GL_C, GL_R, GL_H, false, Ng);
+    if (tg < tHit) {
+      vec3 Pg = E + tg*Dd;
+      float yy = Pg.y - GL_C.y;
+      vec2 o2 = E.xz - GL_C.xz, d2 = Dd.xz;
+      float u = (o2.x*d2.y - o2.y*d2.x)*inversesqrt(dot(d2, d2))/GL_R, au = min(abs(u), 1.0);
+      vec3 env = amb*0.8 + lampI*0.5;
+      vec3 s = gStr > 0.0 ? sunAt(Pg, n, ua, L, ns, pcw, hz)*objT(Pg + Ng*0.002, L, hz) : vec3(0.0);
+      float fres = 0.04 + 0.96*pow(1.0 - sqrt(1.0 - au*au), 5.0);
+      vec3 c;
+      if (yy < GL_W) {
+        // through the water: the shelf and wall behind, a touch green, the edges bending in the dark room
+        c = obj*vec3(0.84, 0.9, 0.87)*(1.0 - 0.8*smoothstep(0.55, 0.96, au));
+        c += sunC*s*0.06*vec3(0.9, 1.0, 0.95)*smoothstep(0.9, 0.0, au);
+        c *= 1.0 - 0.6*exp(-pow((yy - GL_W)/0.0018, 2.0));
+        c += env*0.5*exp(-pow((yy - GL_W - 0.002)/0.0012, 2.0));
+      } else {
+        c = obj*0.95;
+        // the water's surface seen through the glass, from a little above
+        float tp = (GL_C.y + GL_W - E.y)/Dd.y;
+        vec3 Pp = E + tp*Dd;
+        if (length(Pp.xz - GL_C.xz) < GL_R*0.97) c = mix(c, env*1.2 + sunC*s*0.15, 0.45);
+      }
+      c = mix(c, env, fres);
+      c = mix(c, env*0.35, exp(-pow((au - 0.975)/0.025, 2.0))*0.7);
+      c *= 1.0 - 0.35*smoothstep(0.012, 0.004, yy);
+      c += env*0.6*smoothstep(GL_H - 0.0025, GL_H, yy);
+      c += sunC*s*pow(max(dot(Ng, normalize(L + V)), 0.0), 250.0)*3.0;
+      obj = c;
+    }
+    return obj;
+}
+
 // a flame's flicker, 0..1: a fast flutter on a slower breath. t wraps so the noise keeps its precision
 float flick(float t, float s){
   return 0.5*noise(vec2(t*7.0, s)) + 0.3*noise(vec2(t*17.0, s + 7.0)) + 0.2*noise(vec2(t*1.9, s + 3.0));
@@ -276,6 +483,11 @@ void main(){
   wall = mix(wall, plastic, onSw);
   wall = mix(wall, vec3(0.42, 0.29, 0.1), onHk);
   wall *= 1.0 - 0.2*exp(-max(swD, 0.0)/0.0025)*(1.0 - onSw);
+  // the wall darkens a little in the angle under and over the shelf
+  if (shelf > 0.01) {
+    float alongS = smoothstep(SH_X.x - 0.03, SH_X.x + 0.02, uv.x)*smoothstep(SH_X.y + 0.03, SH_X.y - 0.02, uv.x);
+    wall *= 1.0 - shelf*alongS*(0.3*exp(-max(SH_Y.x - uv.y, 0.0)/0.012)*step(uv.y, SH_Y.x) + 0.25*exp(-max(uv.y - SH_Y.y, 0.0)/0.008)*step(SH_Y.y, uv.y));
+  }
 
   float day = smoothstep(-0.10, 0.06, sunAlt);
   float twi = exp(-pow((sunAlt + 0.03)/0.07, 2.0));
@@ -339,6 +551,7 @@ void main(){
       trans *= mix(1.0, webT(vec2(wc.x, -wc.y), pen), life);
       if (isSun) trans *= 1.0 - life*seedShadow(uv, L, hz);
     }
+    if (shelf > 0.01) trans *= mix(vec3(1.0), objT(p, L, hz), shelf);
     if (caustic >= 2) trans *= softCarafe(q - WC, pen);
     trans *= prismT(q - WC, pen);
     if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
@@ -347,6 +560,7 @@ void main(){
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
     float strength = E*smoothstep(0.0, 0.08, alt)*lightK;
     vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
+    gLc = lc; gStr = strength; gTSh = tShade;
     float flat_ = max(L.z, 0.0);
     float bumpR = clamp(max(dot(nb, L), 0.0)/max(flat_, 0.05), 0.0, 3.0);
     float shade = (0.4 + 0.6*flat_)*mix(1.0, bumpR, 0.75);
@@ -356,6 +570,8 @@ void main(){
     float halo = sbox(lq, WH, pen*6.0 + 0.03)*0.07 + sbox(lq, WH, 0.18 + 0.25*haze)*(0.05 + 0.08*haze);
     vec3 direct = lc*strength*(lit*trans*fringe*shade + halo*treeWide*(0.4 + 0.6*flat_)*vec3(1.0, 0.9, 0.8));
     col += wall*direct*(1.0 - 0.45*seedC.x - seedC.y);
+    // the mirror's little sun, a soft-edged oval wherever its bounce lands
+    if (shelf > 0.01) { vec3 o; vec3 ms = mirrorSpot(p, L, hz, n, ua, ns, pcw, o); col += wall*lc*strength*ms*0.85*(0.4 + 0.6*max(-o.z, 0.0))*shelf; }
     // the seed itself, caught in the light: its fine rays glow white
     if (seedC.x + seedC.y > 0.0 && isSun) {
       vec3 Hs = seedS + (D_WIN - dot(n, seedS))/ns*L;
@@ -441,6 +657,7 @@ void main(){
     }
   }
 
+  vec3 colSun = col;
   // a light of its own. Neon: a two-tube sign across the street throws the window onto the wall twice, once
   // per colour. Grow lights hang over the plant and throw its shadow down the wall; each is a few emitters,
   // so panels and tubes give soft shadows and the blurple's red and blue diodes split them into colours
@@ -612,6 +829,20 @@ void main(){
       float env = smoothstep(0.0, 0.3, pr)*smoothstep(1.0, 0.7, pr);
       col += wall*vec3(1.0, 0.88, 0.7)*litc*(1.0 - 0.92*fol)*env*0.5*(1.0 - day);
     }
+  }
+
+  // the shelf and what stands on it, seen from where we stand: each lit by the room, by any lamp
+  // (judged from what it adds to the wall behind), and by the sun through the window
+  // the shelf, four rays a pixel near it so its edges stay clean
+  if (shelf > 0.01 && uv.x > SH_X.x - 0.12 && uv.x < SH_X.y + 0.12 && uv.y > SH_Y.x - 0.08 && uv.y < MI_C.y + MI_R + 0.06) {
+    float hz = 1.0 + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
+    vec3 lampI = max(col - colSun, 0.0)/max(wall, vec3(0.05));
+    vec3 acc = vec3(0.0);
+    for (int k = 0; k < 4; k++) {
+      vec2 o = (vec2(k & 1, k >> 1) - 0.5)*0.5 + vec2(0.125, -0.125)*vec2(k >> 1 == 0 ? 1.0 : -1.0, (k & 1) == 0 ? 1.0 : -1.0);
+      acc += shelfLook(eye, vec3(uv + o*ph, 0.0) - eye, col, amb, lampI, L, n, ua, ns, pcw, hz, isSun);
+    }
+    col = mix(col, acc*0.25, shelf);
   }
 
   float vig = 1.0 - 0.38*pow(length((sc - 0.5)*vec2(1.0, 1.2))*1.25, 2.0);

@@ -34,9 +34,9 @@ fn secs(now: Instant, t0: Instant) -> f64 { now.saturating_duration_since(t0).as
 
 /// the parts of a look that can glide from one value to the next
 #[derive(Clone, Copy)]
-struct Cont { mood: Mood, tilt: f64, facing: f64, rain: f64, prism: f64, lamp: f64, life: f64 }
+struct Cont { mood: Mood, tilt: f64, facing: f64, rain: f64, prism: f64, lamp: f64, life: f64, shelf: f64 }
 impl Cont {
-    fn of(l: &Look) -> Cont { Cont { mood: Mood::named(l.mood), tilt: l.tilt, facing: l.facing, rain: if l.rain { 1.0 } else { 0.0 }, prism: if l.prism { 1.0 } else { 0.0 }, lamp: if l.lamp > 0 { 1.0 } else { 0.0 }, life: if l.life { 1.0 } else { 0.0 } } }
+    fn of(l: &Look) -> Cont { Cont { mood: Mood::named(l.mood), tilt: l.tilt, facing: l.facing, rain: if l.rain { 1.0 } else { 0.0 }, prism: if l.prism { 1.0 } else { 0.0 }, lamp: if l.lamp > 0 { 1.0 } else { 0.0 }, life: if l.life { 1.0 } else { 0.0 }, shelf: if l.shelf { 1.0 } else { 0.0 } } }
     fn lerp(&self, o: &Cont, k: f64) -> Cont {
         let turn = (o.facing - self.facing + 540.0).rem_euclid(360.0) - 180.0;   // the short way round
         Cont {
@@ -44,6 +44,7 @@ impl Cont {
             facing: (self.facing + turn * k).rem_euclid(360.0), rain: self.rain + (o.rain - self.rain) * k,
             prism: self.prism + (o.prism - self.prism) * k, lamp: self.lamp + (o.lamp - self.lamp) * k,
             life: self.life + (o.life - self.life) * k,
+            shelf: self.shelf + (o.shelf - self.shelf) * k,
         }
     }
 }
@@ -269,7 +270,7 @@ impl App {
             // the radiator is on through the winter, a little, whatever the signals say
             path: sun::year_path(self.sim_ms(now), self.o.lat, self.o.lon, c.facing),
             path_key: ((c.facing * 2.0).round() as i64) | (((self.o.lat * 10.0).round() as i64 + 1000) << 12) | (((self.o.lon * 10.0).round() as i64 + 2000) << 24),
-            life: c.life as f32,
+            life: c.life as f32, shelf: c.shelf as f32,
             heat: s.amount("heat").max(0.4 * self.season(now)[3] as f64) as f32,
             bolt: self.bolt.map_or([-1.0, 0.0, 0.0], |(t, side, seed)| [secs(now, t) as f32, side, seed]),
         }
@@ -399,7 +400,7 @@ impl App {
         let walls: Vec<String> = (0..MOODS.len()).map(|i| hex(Mood::named(i).wall)).collect();
         serde_json::json!({
             "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "tree": TREES[l.tree], "mood": MOODS[l.mood], "material": MATERIALS[l.material], "caustic": CAUSTICS[l.caustic],
-                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism, "life": l.life, "lamp": LAMPS[l.lamp] },
+                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism, "life": l.life, "shelf": l.shelf, "lamp": LAMPS[l.lamp] },
             "flags": l.flags(), "clock": self.clock(now), "asleep": self.asleep || self.fade.to == 0.0,
             "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": self.o.pool,
             "cat": self.o.cat_secs, "cat_now": self.cat.is_some(), "passing": self.o.pass_secs,
@@ -470,7 +471,7 @@ impl App {
                 self.set_look(next, now);
                 self.look.flags()
             }
-            "set" | "mood" | "material" | "style" | "plant" | "tree" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "life" | "lamp" | "season" => {
+            "set" | "mood" | "material" | "style" | "plant" | "tree" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "life" | "shelf" | "lamp" | "season" => {
                 let pairs: Vec<(String, String)> = if cmd == "set" {
                     rest.iter().filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect()
                 } else {
@@ -691,7 +692,7 @@ impl App {
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/material/style/plant/tree/caustic/tilt/facing/rain/prism/life/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | bolt | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
+                  | mood/material/style/plant/tree/caustic/tilt/facing/rain/prism/life/shelf/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | bolt | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
         }
     }
 }

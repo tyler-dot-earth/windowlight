@@ -15,6 +15,7 @@ uniform float rain;      // 0..1 drops on the glass
 uniform float gust;      // 0..1 extra wind, kicked by desktop activity
 uniform vec4 cat;        // x position on the sill, pose (0 walk, 1 sit), leg phase, direction (+1/-1); direction 0 = no cat
 uniform float life;      // 0..1 tiny life: a spider in the window corner, dandelion seeds drifting in
+uniform float shelf;     // 0..1 a shelf with a glass of water and a little mirror
 uniform float prism;     // 0..1 a crystal suncatcher hanging in the window
 uniform vec4 passing;    // something outside: x kind (1 birds, 2 car at night), y progress 0..1, z seed, w direction
 uniform vec4 season;     // weights of spring, summer, autumn, winter
