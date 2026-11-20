@@ -135,6 +135,8 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - An air card has sliders for dust, haze, wind, frost and shade, the levels only signals could set before.
   - Moving one sets it by hand, replacing what the signals say; its `×` chip, or "all back to signals", hands it back.
   - `ctl air dust 0.6`, `ctl air dust auto` and `ctl air auto` do the same; hand-set levels last until the wallpaper restarts.
+  - ∿ beside a slider shapes that level across the day with one Bézier curve: drag its two handles, and the ends, which stay joined so midnight loops.
+  - Signals can still push a curved level higher, a time-lapse plays the curve through, and `ctl air dust curve Y0 X1 Y1 X2 Y2` sets one from the terminal.
 
 ## Setup with Nix
 

@@ -214,6 +214,31 @@ impl Bird {
 }
 fn smooth(x: f64) -> f64 { let x = x.clamp(0.0, 1.0); x * x * (3.0 - 2.0 * x) }
 
+
+// ---------------------------------------------------------------- curves: a level shaped across the day
+
+/// one cubic Bézier over a day, midnight to midnight; both ends sit at `y0` so the day loops,
+/// and the two handles are free (their x kept to 0..1 so time only runs forward)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Curve { pub y0: f64, pub x1: f64, pub y1: f64, pub x2: f64, pub y2: f64 }
+impl Curve {
+    /// handle heights may overshoot so a hump can actually reach 0 or 1
+    pub fn new(v: [f64; 5]) -> Curve {
+        let (y, x) = (|a: f64| a.clamp(-0.5, 1.5), |a: f64| a.clamp(0.0, 1.0));
+        Curve { y0: v[0].clamp(0.0, 1.0), x1: x(v[1]), y1: y(v[2]), x2: x(v[3]), y2: y(v[4]) }
+    }
+    pub fn parts(&self) -> [f64; 5] { [self.y0, self.x1, self.y1, self.x2, self.y2] }
+    /// the level at `t`, a fraction of the day
+    pub fn at(&self, t: f64) -> f64 {
+        let b = |s: f64, a: f64, p: f64, q: f64, d: f64| { let u = 1.0 - s; u * u * u * a + 3.0 * u * u * s * p + 3.0 * u * s * s * q + s * s * s * d };
+        let t = t.rem_euclid(1.0);
+        // x(s) only rises, so halving finds the s for this time
+        let (mut lo, mut hi) = (0.0, 1.0);
+        for _ in 0..30 { let m = 0.5 * (lo + hi); if b(m, 0.0, self.x1, self.x2, 1.0) < t { lo = m } else { hi = m } }
+        b(0.5 * (lo + hi), self.y0, self.y1, self.y2, self.y0).clamp(0.0, 1.0)
+    }
+}
+
 // ---------------------------------------------------------------- the reader
 
 pub struct Signals {
@@ -229,6 +254,10 @@ pub struct Signals {
     amounts: HashMap<&'static str, f64>,
     /// levels set by hand on the control page; they replace what the signals say until set back to auto
     pub pinned: HashMap<&'static str, f64>,
+    /// levels shaped across the day; signals can still push above them, and a hand-set level wins over both
+    pub curves: HashMap<&'static str, Curve>,
+    /// how far through the local day the wallpaper thinks it is, 0..1
+    day: f64,
     /// one-off nudges waiting for the app: behaviour names
     pub pulses: Vec<&'static str>,
     birds: Vec<Bird>,
@@ -237,7 +266,7 @@ pub struct Signals {
 impl Signals {
     pub fn new(dir: Option<String>, map_path: String) -> Signals {
         Signals { dir, map_path, rules: vec![], map_errs: vec![], map_stamp: None, live: vec![], last_scan: None, last_frame: None,
-                  amounts: HashMap::new(), pinned: HashMap::new(), pulses: vec![], birds: vec![] }
+                  amounts: HashMap::new(), pinned: HashMap::new(), curves: HashMap::new(), day: 0.5, pulses: vec![], birds: vec![] }
     }
 
     fn load_map(&mut self) {
@@ -270,7 +299,8 @@ impl Signals {
     }
 
     /// look at the folder about once a second; work out pulses and birds from what changed
-    pub fn update(&mut self, now: Instant) {
+    pub fn update(&mut self, now: Instant, day: f64) {
+        self.day = day;
         let first = self.last_scan.is_none();
         if !first && (now - self.last_scan.unwrap()) < Duration::from_secs(1) { self.ease(now, false); return; }
         self.load_map();
@@ -299,6 +329,7 @@ impl Signals {
         for b in BEHAVIOURS {
             let target = self.live.iter().flat_map(|s| self.rules.iter().filter(|r| r.behaviour == b && glob(&r.pat, &s.name)).map(|r| r.amount(s.level)))
                 .fold(0.0, f64::max);
+            let target = self.curves.get(b).map_or(target, |c| c.at(self.day).max(target));
             let target = self.pinned.get(b).copied().unwrap_or(target);
             let a = self.amounts.entry(b).or_insert(0.0);
             *a += (target - *a) * k;
@@ -361,8 +392,9 @@ impl Signals {
             "rules": self.rules.iter().map(|r| format!("{} {}", r.pat, r.behaviour)).collect::<Vec<_>>(),
             "live": self.live.iter().map(|s| serde_json::json!({ "name": s.name, "label": s.label, "level": (s.level * 100.0).round() / 100.0,
                 "state": s.state.name(), "drives": self.behaviours_of(&s.name) })).collect::<Vec<_>>(),
-            "behaviours": BEHAVIOURS,
-            "air": AIR.iter().map(|b| serde_json::json!({ "name": b, "level": (self.amount(b) * 100.0).round() / 100.0, "pinned": self.pinned.get(b) })).collect::<Vec<_>>(),
+            "behaviours": BEHAVIOURS, "day": (self.day * 10000.0).round() / 10000.0,
+            "air": AIR.iter().map(|b| serde_json::json!({ "name": b, "level": (self.amount(b) * 100.0).round() / 100.0, "pinned": self.pinned.get(b),
+                "curve": self.curves.get(b).map(|c| c.parts().map(|x| (x * 1000.0).round() / 1000.0)) })).collect::<Vec<_>>(),
         })
     }
 }
@@ -386,6 +418,15 @@ mod tests {
         assert_eq!(e.len(), 1);
         assert!((r[1].amount(0.85) - 0.5).abs() < 1e-9);
         assert_eq!(r[1].amount(0.5), 0.0);
+    }
+    #[test]
+    fn curves() {
+        let flat = Curve::new([0.3, 0.2, 0.3, 0.8, 0.3]);
+        for t in [0.0, 0.25, 0.6, 0.99] { assert!((flat.at(t) - 0.3).abs() < 1e-9); }
+        let hump = Curve::new([0.0, 0.4, 1.4, 0.6, 1.4]);
+        assert!(hump.at(0.5) > 0.95 && hump.at(0.02) < 0.1);
+        assert!((hump.at(1.0) - hump.at(0.0)).abs() < 1e-9, "midnight loops");
+        assert_eq!(Curve::new([2.0, -1.0, 9.0, 3.0, -9.0]).parts(), [1.0, 0.0, 1.5, 1.0, -0.5]);
     }
     #[test]
     fn files() {

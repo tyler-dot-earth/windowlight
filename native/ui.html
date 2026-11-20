@@ -97,7 +97,14 @@
   .foot { margin-top:12px; padding-top:10px; border-top:1px solid var(--line); color:var(--faint); font-size:12px; display:grid; gap:6px }
   .foot code { color:var(--dim); word-break:break-all }
   .empty { color:var(--faint); font-size:13px; padding:4px 0 }
-  .air { grid-template-columns:62px 1fr 76px }
+  .air { grid-template-columns:62px 1fr 76px 30px }
+  .air .bez { padding:2px 0; width:30px; font-size:15px; line-height:1; color:var(--faint); background:transparent; border-color:transparent }
+  .air .bez.on { color:var(--sun); background:var(--chip); border-color:#4a4037 }
+  .curve { display:none; margin:6px 0 4px 72px; touch-action:none }
+  .curve.open { display:block }
+  .curve svg { width:100%; height:auto; display:block; overflow:visible; cursor:crosshair }
+  .curve .h { cursor:grab }
+  .curve .h:active { cursor:grabbing }
   .air span:first-child { cursor:help }
   .air .num { padding:2px 8px; font-size:12px; justify-self:end; border-color:transparent; background:transparent; color:var(--faint) }
   .air .num.on { background:var(--chip); border-color:#4a4037; color:var(--ink); font-weight:400 }
@@ -194,7 +201,7 @@
       </section>
 
       <section style="--o:5">
-        <h2>air <small>set by hand, or left to the signals</small></h2>
+        <h2>air <small>by hand, on a curve through the day, or left to the signals</small></h2>
         <div id="air"></div>
         <div class="row" style="margin-top:10px"><button data-cmd="air auto">↺ all back to signals</button></div>
       </section>
@@ -219,14 +226,14 @@ function toast(t) {
   m.textContent = t; m.classList.toggle('err', /^error/.test(t)); m.classList.add('show');
   clearTimeout(toastT); toastT = setTimeout(() => m.classList.remove('show'), 2600);
 }
-async function send(line) {
+async function send(line, quiet) {
   let t;
   try { t = await (await fetch('/cmd', { method: 'POST', body: line })).text(); } catch { t = 'error: windowlight isn\'t answering'; }
   // a look comes back as flags; say it the way the favourites do
   const o = t.startsWith('--style') ? parseFlags(t) : null;
   // air comes back as every level; name only the ones set by hand
-  const air = /\bshade (auto|[\d.]+)$/.test(t) ? [...t.matchAll(/(\w+) ([\d.]+)/g)].map(x => `${x[1]} ${Math.round(x[2] * 100)}%`) : null;
-  toast(air ? (air.length ? 'by hand: ' + air.join(' · ') : 'all air follows the signals')
+  const air = /\bshade (auto|curve|[\d.]+)$/.test(t) ? [...t.matchAll(/(\w+) ([\d.]+|curve)/g)].map(x => x[2] == "curve" ? `${x[1]} on a curve` : `${x[1]} ${Math.round(x[2] * 100)}%`) : null;
+  if (!quiet) toast(air ? (air.length ? air.join(" · ") : "all air follows the signals")
         : o ?[o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
           : t.length > 200 ? t.slice(0, 200) + '…' : t);
   poll();
@@ -251,6 +258,58 @@ $('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'))
 
 const AIR = { dust: 'more specks drifting in the sunbeam', haze: 'softer, milkier light', wind: 'the plant sways in a steady wind',
               frost: 'frost on the glass, any season', shade: 'the light dims, as if a cloud is over' };
+
+// a day-long Bézier, midnight to midnight: both ends share one level so the day loops, the two handles are free
+const bezAt = (c, t) => {
+  const [y0, x1, y1, x2, y2] = c, b = (s, a, p, q, d) => { const u = 1 - s; return u * u * u * a + 3 * u * u * s * p + 3 * u * s * s * q + s * s * s * d; };
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (b(m, 0, x1, x2, 1) < t) lo = m; else hi = m; }
+  return Math.min(1, Math.max(0, b((lo + hi) / 2, y0, y1, y2, y0)));
+};
+const curveEd = {}, CW = 300, cx = t => t * CW, cy = v => 75 - 50 * v;   // the band 25..75 is 0..1; handles may overshoot
+const sv = (tag, at) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in at) e.setAttribute(k, at[k]); return e; };
+function makeCurve(k) {
+  const box = el('div', 'curve'), svg = sv('svg', { viewBox: `0 0 ${CW} 96` });
+  svg.append(sv('rect', { x: 0, y: 25, width: CW, height: 50, rx: 6, fill: '#ffffff08' }));
+  for (const [t, s] of [[0, 'midnight'], [.25, '6am'], [.5, 'noon'], [.75, '6pm'], [1, 'midnight']]) {
+    if (t > 0 && t < 1) svg.append(sv('line', { x1: cx(t), x2: cx(t), y1: 25, y2: 75, stroke: '#ffffff14' }));
+    const tx = sv('text', { x: cx(t), y: 92, 'text-anchor': t == 0 ? 'start' : t == 1 ? 'end' : 'middle', fill: '#6f6457', 'font-size': 8 });
+    tx.textContent = s; svg.append(tx);
+  }
+  const fill = sv('path', { fill: '#f2b65c1f' }), line = sv('path', { fill: 'none', stroke: '#f2b65c', 'stroke-width': 2, 'stroke-linejoin': 'round' });
+  const arms = sv('path', { fill: 'none', stroke: '#a39584', 'stroke-dasharray': '3 3' });
+  const now = sv('line', { y1: 20, y2: 80, stroke: '#f3e9db60' }), dot = sv('circle', { r: 3.5, fill: '#f3e9db' });
+  const pts = ['e0', 'h1', 'h2', 'e1'].map(p => sv('circle', { r: p[0] == 'e' ? 4.5 : 5.5, class: 'h', 'data-p': p, 'stroke-width': 2, stroke: '#f2b65c', fill: p[0] == 'e' ? '#26211d' : '#f2b65c' }));
+  for (const p of pts) p.append(Object.assign(sv('title', {}), { textContent: p.dataset.p[0] == 'e' ? 'midnight\'s level (both ends move together)' : 'a handle: pull the curve toward a time and level' }));
+  svg.append(fill, arms, line, now, dot, ...pts); box.append(svg);
+  const ed = { box, c: null, day: 0.5, drag: null, sent: 0, timer: 0 };
+  ed.draw = () => {
+    const c = ed.c; if (!c) return;
+    let d = '';
+    for (let i = 0; i <= 120; i++) { const t = i / 120; d += (i ? 'L' : 'M') + cx(t).toFixed(1) + ' ' + cy(bezAt(c, t)).toFixed(1); }
+    line.setAttribute('d', d); fill.setAttribute('d', d + `L${CW} 75L0 75Z`);
+    const [y0, x1, y1, x2, y2] = c, at = { e0: [0, y0], h1: [x1, y1], h2: [x2, y2], e1: [1, y0] };
+    arms.setAttribute('d', `M0 ${cy(y0)}L${cx(x1)} ${cy(y1)}M${CW} ${cy(y0)}L${cx(x2)} ${cy(y2)}`);
+    for (const p of pts) { const [x, y] = at[p.dataset.p]; p.setAttribute('cx', cx(x)); p.setAttribute('cy', cy(y)); }
+    for (const a of ['x1', 'x2']) now.setAttribute(a, cx(ed.day));
+    dot.setAttribute('cx', cx(ed.day)); dot.setAttribute('cy', cy(bezAt(c, ed.day)));
+  };
+  // while dragging, the wallpaper hears about it a few times a second; letting go says so out loud
+  const push = quiet => { ed.sent = Date.now(); send(`air ${k} curve ${ed.c.map(x => x.toFixed(3)).join(' ')}`, quiet); };
+  svg.onpointerdown = e => { const p = e.target.closest('.h'); if (!p || !ed.c) return; ed.drag = p.dataset.p; svg.setPointerCapture(e.pointerId); e.preventDefault(); };
+  svg.onpointermove = e => {
+    if (!ed.drag) return;
+    const q = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse()), c = ed.c, v = (75 - q.y) / 50;
+    if (ed.drag[0] == 'e') c[0] = Math.min(1, Math.max(0, v));
+    else { const i = ed.drag == 'h1' ? 1 : 3; c[i] = Math.min(1, Math.max(0, q.x / CW)); c[i + 1] = Math.min(1.5, Math.max(-0.5, v)); }
+    ed.draw();
+    clearTimeout(ed.timer);
+    if (Date.now() - ed.sent > 250) push(true); else ed.timer = setTimeout(() => push(true), 250);
+  };
+  svg.onpointerup = svg.onpointercancel = () => { if (!ed.drag) return; ed.drag = null; clearTimeout(ed.timer); push(false); };
+  return ed;
+}
+
 const compass = d => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((d % 360) + 360) % 360 / 45) % 8];
 const show = { facing: v => `${v}° ${compass(v)}`, tilt: v => `${v}°` };
 for (const k of ['tilt', 'facing']) {
@@ -318,21 +377,27 @@ async function poll() {
   $('sunpos').textContent = st.sun.alt > 0 ? `sun ${st.sun.alt}° up, from the ${compass(st.sun.az)}` : 'the sun is down';
   for (const k of ['tilt', 'facing']) if (dragging != k) { const v = Math.round(L[k]); $(k).value = v; $(k + 'v').textContent = show[k](v); }
 
-  // air: sliders follow the signals until moved; the chip beside one sets it back
+  // air: sliders follow the signals until moved; ∿ swaps in a curve through the day; the chip sets either back
   const air = st.signals.air, ab = $('air');
   if (!ab.childElementCount) for (const { name: k } of air) {
-    const row = el('div', 'slider air'), name = el('span', '', k), r = el('input'), n = el('button', 'num');
+    const row = el('div', 'slider air'), name = el('span', '', k), r = el('input'), n = el('button', 'num'), b = el('button', 'bez', '∿');
     name.title = AIR[k] || ''; r.type = 'range'; r.min = 0; r.max = 100; r.id = 'air-' + k;
+    b.title = 'shape it across the day with a curve';
     r.oninput = () => { dragging = r.id; n.textContent = r.value + '%'; };
     r.onchange = () => { dragging = null; send(`air ${k} ${(r.value / 100).toFixed(2)}`); };
-    n.onclick = () => { if (st.signals.air.find(a => a.name == k).pinned != null) send(`air ${k} auto`); };
-    row.append(name, r, n); ab.append(row);
+    n.onclick = () => { const a = st.signals.air.find(a => a.name == k); if (a.pinned != null || a.curve) send(`air ${k} auto`); };
+    b.onclick = () => send(`air ${k} ${st.signals.air.find(a => a.name == k).curve ? 'auto' : 'curve'}`);
+    curveEd[k] = makeCurve(k);
+    row.append(name, r, n, b); ab.append(row, curveEd[k].box);
   }
   for (const a of air) { const k = a.name;
-    const r = $('air-' + k), row = r.parentNode, n = row.lastChild, pin = a.pinned != null;
-    row.classList.toggle('auto', !pin); n.classList.toggle('on', pin);
-    if (dragging != r.id) { const v = Math.round(100 * (pin ? a.pinned : a.level)); r.value = v; n.textContent = pin ? `${v}% ×` : `auto ${v}%`; }
-    n.title = pin ? 'set by hand; click to hand it back to the signals' : 'following the signals';
+    const r = $('air-' + k), row = r.parentNode, n = row.children[2], b = row.children[3], ed = curveEd[k], pin = a.pinned != null, cur = !!a.curve;
+    row.classList.toggle('auto', !pin && !cur); n.classList.toggle('on', pin || cur); b.classList.toggle('on', cur); ed.box.classList.toggle('open', cur);
+    if (dragging != r.id) { const v = Math.round(100 * (pin ? a.pinned : a.level)); r.value = v; n.textContent = pin ? `${v}% ×` : cur ? `∿ ${v}% ×` : `auto ${v}%`; }
+    n.title = pin ? 'set by hand; click to hand it back to the signals' : cur ? 'on a curve; click to hand it back to the signals' : 'following the signals';
+    ed.day = st.signals.day;
+    if (cur && ed.drag == null) ed.c = [...a.curve];
+    if (cur) ed.draw();
   }
 
   // over time

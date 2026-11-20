@@ -311,7 +311,9 @@ impl App {
                 self.next_cat = now + Duration::from_secs_f64(gap);
             }
         }
-        self.sig.update(now);
+        let day = { use chrono::Timelike; let t = chrono::DateTime::from_timestamp_millis(self.sim_ms(now) as i64).unwrap().with_timezone(&chrono::Local);
+                    t.num_seconds_from_midnight() as f64 / 86_400.0 };
+        self.sig.update(now, day);
         let dt = secs(now, self.last_t).min(0.5);
         self.last_t = now;
         self.spin += dt * 2.5 * self.sig.amount("suncatcher");
@@ -515,22 +517,34 @@ impl App {
             // play a source: `signal NAME 0.4|busy|waiting|done|alert|quiet|clear [ttl]`; `signals` lists them
             "air" => {
                 use crate::signals::AIR;
-                let show = |s: &Signals| AIR.iter().map(|b| match s.pinned.get(b) {
-                    Some(v) => format!("{b} {v:.2}"), None => format!("{b} auto")
+                use crate::signals::Curve;
+                let show = |s: &Signals| AIR.iter().map(|b| match (s.pinned.get(b), s.curves.get(b)) {
+                    (Some(v), _) => format!("{b} {v:.2}"), (None, Some(_)) => format!("{b} curve"), _ => format!("{b} auto")
                 }).collect::<Vec<_>>().join(" · ");
                 match (rest.first().copied(), rest.get(1).copied()) {
                     (None, _) => show(&self.sig),
-                    (Some("auto"), None) => { self.sig.pinned.clear(); format!("air follows the signals: {}", show(&self.sig)) }
+                    (Some("auto"), None) => { self.sig.pinned.clear(); self.sig.curves.clear(); format!("air follows the signals: {}", show(&self.sig)) }
                     (Some(name), Some(v)) => {
                         let Some(b) = AIR.iter().find(|x| **x == name) else { return format!("air wants one of {}", AIR.join(", ")) };
-                        if v == "auto" { self.sig.pinned.remove(b); }
-                        else {
-                            let Ok(x) = v.parse::<f64>() else { return "air NAME wants a level 0..1 or auto".into() };
+                        if v == "auto" { self.sig.pinned.remove(b); self.sig.curves.remove(b); }
+                        else if v == "curve" {
+                            // no numbers: keep the curve it has, or start from a gentle afternoon swell
+                            let n: Vec<f64> = rest[2..].iter().filter_map(|x| x.parse().ok()).collect();
+                            let c = match n.len() {
+                                5 => Curve::new([n[0], n[1], n[2], n[3], n[4]]),
+                                0 => self.sig.curves.get(b).copied().unwrap_or(Curve::new([0.1, 0.45, 1.0, 0.75, 1.0])),
+                                _ => return "air NAME curve wants nothing, or Y0 X1 Y1 X2 Y2: midnight's level and two handles, x as a fraction of the day".into(),
+                            };
+                            self.sig.pinned.remove(b);
+                            self.sig.curves.insert(b, c);
+                        } else {
+                            let Ok(x) = v.parse::<f64>() else { return "air NAME wants a level 0..1, curve or auto".into() };
+                            self.sig.curves.remove(b);
                             self.sig.pinned.insert(b, x.clamp(0.0, 1.0));
                         }
                         show(&self.sig)
                     }
-                    _ => format!("air wants NAME LEVEL (0..1 or auto) or auto, NAME one of {}", AIR.join(", ")),
+                    _ => format!("air wants NAME LEVEL (0..1, curve or auto) or auto, NAME one of {}", AIR.join(", ")),
                 }
             }
             "signal" => {
@@ -607,7 +621,7 @@ impl App {
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/style/plant/caustic/tilt/facing/rain/prism/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
+                  | mood/style/plant/caustic/tilt/facing/rain/prism/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
         }
     }
 }
