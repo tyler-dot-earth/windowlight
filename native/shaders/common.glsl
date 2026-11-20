@@ -22,6 +22,8 @@ uniform int flockN;
 uniform float dust;      // 0..1 more dust in the light shaft
 uniform float frostSig;  // 0..1 frost on the glass, any season
 uniform float spinPh;    // extra turn of the suncatcher
+uniform int lamp;        // 0 none 1 neon 2 sodium 3 halide 4 blurple 5 full-spectrum 6 t5
+uniform float lampK;     // 0..1 how far on it is
 
 const float D_WIN = 0.55;
 const float D_PLANT = 1.05;

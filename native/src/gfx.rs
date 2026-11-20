@@ -24,7 +24,9 @@ pub struct Frame {
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
     pub prism: f32, pub passing: [f32; 4], pub season: [f32; 4],
     /// from signals: birds (x, y, perched, beat) and how many, dust, frost, extra suncatcher turn
-    pub flock: [[f32; 4]; 6], pub flock_n: i32, pub dust: f32, pub frost: f32, pub spin: f32,
+    pub flock: [[f32; 4]; 6], pub flock_n: i32,
+    /// a light of its own (index into LAMPS) and how far on it is
+    pub lamp: i32, pub lamp_k: f32, pub dust: f32, pub frost: f32, pub spin: f32,
 }
 
 /// per-scene textures (two scenes exist while crossfading)
@@ -124,6 +126,8 @@ impl Renderer {
         gl.uniform_1_f32(u("dust").as_ref(), f.dust);
         gl.uniform_1_f32(u("frostSig").as_ref(), f.frost);
         gl.uniform_1_f32(u("spinPh").as_ref(), f.spin);
+        gl.uniform_1_i32(u("lamp").as_ref(), f.lamp);
+        gl.uniform_1_f32(u("lampK").as_ref(), f.lamp_k);
     }
 
     /// draw a fullscreen pass of `p` into `t` (or the given framebuffer), then rebuild mips

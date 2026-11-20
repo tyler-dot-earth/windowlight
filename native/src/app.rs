@@ -1,7 +1,7 @@
 // Scene state over time: the current look, transitions between looks, gusts, the cat, favourites,
 // and wake/sleep fades.
 use crate::gfx::{Frame, Renderer, SceneTex};
-use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, MOODS, PLANTS, STYLES};
+use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, LAMPS, MOODS, PLANTS, STYLES};
 pub const SEASONS: [&str; 5] = ["spring", "summer", "autumn", "winter", "auto"];
 use crate::signals::Signals;
 use crate::sun;
@@ -34,15 +34,15 @@ fn secs(now: Instant, t0: Instant) -> f64 { now.saturating_duration_since(t0).as
 
 /// the parts of a look that can glide from one value to the next
 #[derive(Clone, Copy)]
-struct Cont { mood: Mood, tilt: f64, facing: f64, rain: f64, prism: f64 }
+struct Cont { mood: Mood, tilt: f64, facing: f64, rain: f64, prism: f64, lamp: f64 }
 impl Cont {
-    fn of(l: &Look) -> Cont { Cont { mood: Mood::named(l.mood), tilt: l.tilt, facing: l.facing, rain: if l.rain { 1.0 } else { 0.0 }, prism: if l.prism { 1.0 } else { 0.0 } } }
+    fn of(l: &Look) -> Cont { Cont { mood: Mood::named(l.mood), tilt: l.tilt, facing: l.facing, rain: if l.rain { 1.0 } else { 0.0 }, prism: if l.prism { 1.0 } else { 0.0 }, lamp: if l.lamp > 0 { 1.0 } else { 0.0 } } }
     fn lerp(&self, o: &Cont, k: f64) -> Cont {
         let turn = (o.facing - self.facing + 540.0).rem_euclid(360.0) - 180.0;   // the short way round
         Cont {
             mood: self.mood.lerp(&o.mood, k as f32), tilt: self.tilt + (o.tilt - self.tilt) * k,
             facing: (self.facing + turn * k).rem_euclid(360.0), rain: self.rain + (o.rain - self.rain) * k,
-            prism: self.prism + (o.prism - self.prism) * k,
+            prism: self.prism + (o.prism - self.prism) * k, lamp: self.lamp + (o.lamp - self.lamp) * k,
         }
     }
 }
@@ -140,6 +140,8 @@ pub struct App {
     jump: Option<f64>,
     pub sig: Signals,
     spin: f64, last_t: Instant,
+    /// the lamp last switched on, so it can fade out after the look says none
+    last_lamp: usize,
 }
 
 pub fn now_ms() -> f64 {
@@ -180,7 +182,7 @@ impl App {
             fade: Tween::still(1.0), warp_min: Tween::still(0.0), asleep: false,
             rng: Rng::seeded(), last_shuffle: now, lapse: None,
             gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, jump: None,
-            sig: Signals::new(o.signals.clone(), o.signal_map.clone()), spin: 0.0, last_t: now, o,
+            sig: Signals::new(o.signals.clone(), o.signal_map.clone()), spin: 0.0, last_t: now, last_lamp: o.look.lamp, o,
         };
         // the first cat comes along a minute or three in, then about every --cat
         a.next_cat = now + Duration::from_secs_f64(60.0 + a.rng.f() * 120.0);
@@ -247,7 +249,7 @@ impl App {
             mood, fade: (self.fade.at(now) * self.lapse.map_or(1.0, |l| l.edge(now))) as f32,
             rain: rain as f32, gust: self.gust(now).max(0.75 * s.amount("wind")) as f32, cat: self.cat_vec(now), light_k: lk as f32,
             prism: c.prism.max((s.amount("suncatcher") * 5.0).min(1.0)) as f32, passing: self.passing.and_then(|p| p.at(now)).unwrap_or([0.0; 4]), season: self.season(now),
-            flock, flock_n, dust: s.amount("dust") as f32, frost: s.amount("frost") as f32, spin: self.spin as f32,
+            flock, flock_n, lamp: if self.look.lamp > 0 { self.look.lamp } else { self.last_lamp } as i32, lamp_k: c.lamp as f32, dust: s.amount("dust") as f32, frost: s.amount("frost") as f32, spin: self.spin as f32,
         }
     }
 
@@ -283,6 +285,7 @@ impl App {
             if m == self.look { 1.4 } else { 2.2 }
         };
         self.c_from = here;
+        if next.lamp > 0 { self.last_lamp = next.lamp; }
         self.c_to = Cont::of(&next);
         self.c_k = Tween { from: 0.0, to: 1.0, t0: now, dur };
         self.look = next;
@@ -366,7 +369,7 @@ impl App {
         let walls: Vec<String> = (0..MOODS.len()).map(|i| hex(Mood::named(i).wall)).collect();
         serde_json::json!({
             "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "mood": MOODS[l.mood], "caustic": CAUSTICS[l.caustic],
-                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism },
+                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism, "lamp": LAMPS[l.lamp] },
             "flags": l.flags(), "clock": self.clock(now), "asleep": self.asleep || self.fade.to == 0.0,
             "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": self.o.pool,
             "cat": self.o.cat_secs, "cat_now": self.cat.is_some(), "passing": self.o.pass_secs,
@@ -375,7 +378,7 @@ impl App {
             "favs": favs,
             "sun": { "alt": alt.to_degrees().round(), "az": az.to_degrees().rem_euclid(360.0).round() },
             "signals": self.sig.state(),
-            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "mood_wall": walls, "caustic": CAUSTICS, "season": SEASONS },
+            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "mood_wall": walls, "caustic": CAUSTICS, "lamp": LAMPS, "season": SEASONS },
         }).to_string()
     }
 }
@@ -436,7 +439,7 @@ impl App {
                 self.set_look(next, now);
                 self.look.flags()
             }
-            "set" | "mood" | "style" | "plant" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "season" => {
+            "set" | "mood" | "style" | "plant" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "lamp" | "season" => {
                 let pairs: Vec<(String, String)> = if cmd == "set" {
                     rest.iter().filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect()
                 } else {
@@ -621,7 +624,7 @@ impl App {
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/style/plant/caustic/tilt/facing/rain/prism/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
+                  | mood/style/plant/caustic/tilt/facing/rain/prism/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
         }
     }
 }

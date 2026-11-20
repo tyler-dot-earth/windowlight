@@ -43,6 +43,7 @@
        display:flex; justify-content:space-between; align-items:baseline; gap:10px }
   h2 small { text-transform:none; letter-spacing:0; font-weight:400; color:var(--faint); font-size:12px }
   h3 { font-size:12.5px; color:var(--dim); font-weight:550; margin:0 0 7px }
+  h3 small { font-weight:400; color:var(--faint); margin-left:6px }
   .group + .group { margin-top:16px; padding-top:14px; border-top:1px solid var(--line) }
 
   /* now card */
@@ -188,6 +189,7 @@
           <div class="row"><span class="row" id="caustic"></span><span style="width:10px"></span>
             <button id="rain">🌧 rain</button><button id="prism">🔮 suncatcher</button></div>
         </div>
+        <div class="group"><h3>lamp <small>a light of its own</small></h3><div class="row" id="lamp"></div></div>
       </section>
 
       <section style="--o:4">
@@ -234,7 +236,7 @@ async function send(line, quiet) {
   // air comes back as every level; name only the ones set by hand
   const air = /\bshade (auto|curve|[\d.]+)$/.test(t) ? [...t.matchAll(/(\w+) ([\d.]+|curve)/g)].map(x => x[2] == "curve" ? `${x[1]} on a curve` : `${x[1]} ${Math.round(x[2] * 100)}%`) : null;
   if (!quiet) toast(air ? (air.length ? air.join(" · ") : "all air follows the signals")
-        : o ?[o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
+        : o ?[o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && o.lamp + ' lamp', `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
           : t.length > 200 ? t.slice(0, 200) + '…' : t);
   poll();
   clearTimeout(shotT); shotT = setTimeout(shot, 1300);   // after the crossfade has mostly settled
@@ -256,6 +258,9 @@ $('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
 $('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
 $('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'));
 
+const LAMP = { neon: 'a pink and teal sign across the street, brightest after dark', sodium: 'HID grow light, high-pressure sodium: deep amber, sharp shadows',
+               halide: 'HID grow light, metal halide: cool white, sharp shadows', blurple: 'LED grow light, red and blue diodes: shadows split into colours',
+               'full-spectrum': 'LED grow panel, warm white: soft shadows', t5: 'fluorescent tubes in a row: a shadow per tube' };
 const AIR = { dust: 'more specks drifting in the sunbeam', haze: 'softer, milkier light', wind: 'the plant sways in a steady wind',
               frost: 'frost on the glass, any season', shade: 'the light dims, as if a cloud is over' };
 
@@ -358,7 +363,7 @@ async function poll() {
   $('status').replaceChildren(...pills.map(([h, c]) => { const p = el('span', 'pill' + (c ? ' ' + c : '')); p.innerHTML = h; return p; }));
 
   // now
-  $('tag').textContent = `${L.style} · ${L.plant == 'none' ? 'no plant' : L.plant} · ${L.mood}`;
+  $('tag').textContent = `${L.style} · ${L.plant == 'none' ? 'no plant' : L.plant} · ${L.mood}${L.lamp != 'none' ? ' · ' + L.lamp + ' lamp' : ''}`;
   $('preview').classList.toggle('zz', st.asleep);
   $('keep').classList.toggle('on', st.kept);
   $('keep').lastChild.textContent = st.kept ? 'kept' : 'keep'; $('keep').firstChild.textContent = st.kept ? '♥' : '♡';
@@ -371,6 +376,8 @@ async function poll() {
   chips('mood', C.mood, L.mood, 'mood', C.mood_wall);
   chips('plant', C.plant, L.plant);
   chips('caustic', C.caustic, L.caustic);
+  chips('lamp', C.lamp, L.lamp);
+  for (const b of $('lamp').children) b.title = LAMP[b.dataset.v] || '';
   $('rain').classList.toggle('on', L.rain); $('prism').classList.toggle('on', L.prism);
   chips('season', C.season, st.season);
   for (const b of $('season').children) b.title = b.dataset.v == 'auto' ? 'follows the date: ' + st.season_now : '';
@@ -414,7 +421,7 @@ async function poll() {
     const o = parseFlags(line), d = el('div', 'fav' + (line == st.flags ? ' cur' : ''));
     const sw = el('i'); sw.style.background = C.mood_wall[C.mood.indexOf(o.mood)] || '#888';
     const what = el('div', 'what'); what.append(el('b', '', `${o.style} · ${o.plant == 'none' ? 'no plant' : o.plant}`),
-      el('small', '', [o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher'].filter(Boolean).join(' · ')));
+      el('small', '', [o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && o.lamp + ' lamp'].filter(Boolean).join(' · ')));
     const x = el('button', '', '✕'); x.title = 'remove'; x.dataset.cmd = `drop ${i + 1}`;
     d.dataset.cmd = `fav ${i + 1}`; d.append(sw, what, x); f.append(d);
   });

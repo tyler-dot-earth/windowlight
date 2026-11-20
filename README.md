@@ -137,6 +137,10 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - `ctl air dust 0.6`, `ctl air dust auto` and `ctl air auto` do the same; hand-set levels last until the wallpaper restarts.
   - ∿ beside a slider shapes that level across the day with one Bézier curve: drag its two handles, and the ends, which stay joined so midnight loops.
   - Signals can still push a curved level higher, a time-lapse plays the curve through, and `ctl air dust curve Y0 X1 Y1 X2 Y2` sets one from the terminal.
+- A lamp gives the room a light of its own: `--lamp`, `ctl lamp NAME`, or the lamp row in the room card.
+  - `neon` is a pink and teal sign across the street; each tube throws the window onto the wall, brightest after dark, and the teal one stutters now and then.
+  - The rest are grow lights hung over the plant, each throwing its own plant shadow down the wall: `sodium` and `halide` are the two HIDs (amber and cool white, sharp shadows), `blurple` is red and blue diodes (shadows with red and blue fringes), `full-spectrum` is a warm-white LED panel (soft shadows) and `t5` is a row of tubes (a shadow per tube).
+  - Shuffles turn one on about one look in eight; looks saved before lamps existed come back with none.
 
 ## Setup with Nix
 

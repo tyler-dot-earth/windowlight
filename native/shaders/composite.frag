@@ -190,6 +190,58 @@ void main(){
     }
   }
 
+  // a light of its own. Neon: a two-tube sign across the street throws the window onto the wall twice, once
+  // per colour. Grow lights hang over the plant and throw its shadow down the wall; each is a few emitters,
+  // so panels and tubes give soft shadows and the blurple's red and blue diodes split them into colours
+  if (lamp > 0 && lampK > 0.001) {
+    vec3 p0 = vec3(uv, 0.0);
+    if (lamp == 1) {
+      for (int i = 0; i < 2; i++) {
+        vec3 Ln = normalize(i == 0 ? vec3(0.3, 0.42, 1.0) : vec3(-0.22, 0.32, 1.0));
+        float nn = dot(n, Ln);
+        if (nn < 0.05) continue;
+        vec3 hn = p0 + (D_WIN - dot(n, p0))/nn*Ln;
+        vec3 li = softAp(vec2(dot(ua, hn), hn.y), 0.045 + 0.03*haze);
+        float fol = 0.0;
+        if (plantType > 0) { vec3 hp = p0 + (D_PLANT - dot(n, p0))/nn*Ln; fol = softFol(vec2(dot(ua, hp), hp.y), 0.025); }
+        // the pink tube only hums; the teal one stutters now and then, the way old neon does
+        float on = i == 0 ? 0.96 + 0.04*sin(time*6.3) : (sin(time*0.23 + 1.0) > 0.94 ? step(0.4, hash(vec2(floor(time*13.0), 5.0))) : 1.0);
+        vec3 c = i == 0 ? vec3(1.0, 0.13, 0.42) : vec3(0.08, 0.8, 1.0);
+        col += wall*c*li*(1.0 - 0.9*fol)*on*mix(0.75, 0.16, day)*lampK;
+      }
+      col += wall*vec3(0.45, 0.4, 0.7)*0.03*lampK*(1.0 - 0.8*day);
+    } else {
+      // where the fixture hangs (above the frame, out from the wall) and the plane its plant's leaves fill
+      const float ZP = 0.2;
+      vec3 Lp = vec3(WC.x - 0.1, 1.5, 0.78);
+      int nt = lamp == 4 ? 2 : lamp >= 5 ? 4 : 1;
+      float span = lamp == 4 ? 0.07 : lamp == 5 ? 0.2 : lamp == 6 ? 0.42 : 0.0;
+      vec3 base = lamp == 2 ? vec3(1.0, 0.42, 0.07) : lamp == 3 ? vec3(0.78, 0.88, 1.0) : lamp == 5 ? vec3(1.0, 0.9, 0.86) : vec3(0.82, 0.94, 1.0);
+      vec3 tot = vec3(0.0);
+      for (int i = 0; i < 4; i++) {
+        if (i >= nt) break;
+        float fi = nt == 1 ? 0.0 : float(i)/float(nt - 1) - 0.5;
+        vec3 e = Lp + vec3(fi*span, 0.0, 0.0);
+        vec3 tint = lamp == 4 ? (i == 0 ? vec3(1.0, 0.04, 0.12) : vec3(0.28, 0.1, 1.0)) : base;
+        vec3 d = e - p0; float r2 = dot(d, d); vec3 dn = d*inversesqrt(r2);
+        // an HID sits in a reflector hood with a hard rim; panels and tubes spread wider
+        float cone = lamp <= 3 ? smoothstep(0.3, 0.5, dn.y) : smoothstep(-0.05, 0.6, dn.y);
+        float irr = max(dn.z, 0.0)*cone/r2;
+        if (plantType > 0 && irr > 0.0) {
+          vec2 hit = mix(p0.xy, e.xy, ZP/e.z);
+          vec2 fq = vec2(hit.x - Lp.x + WC.x, hit.y - 0.32);
+          float sz = lamp <= 3 ? 0.006 : lamp == 4 ? 0.01 : lamp == 5 ? 0.028 : 0.018;
+          irr *= 1.0 - 0.85*softFol(fq, 0.004 + sz*ZP/(e.z - ZP));
+        }
+        tot += tint*irr;
+      }
+      float pow_ = lamp == 2 ? 2.6 : lamp == 3 ? 2.4 : lamp == 4 ? 2.2 : 2.7;
+      col += wall*tot*pow_/float(nt)*mix(1.0, 0.55, day)*lampK;
+      // the fixture's glow hanging in the air just above the frame
+      col += base*(lamp == 4 ? vec3(0.9, 0.3, 1.0) : vec3(1.0))*exp(-2.2*length((uv - Lp.xy)*vec2(0.6, 1.0)))*(0.05 + 0.08*haze)*lampK;
+    }
+  }
+
   // headlights at night: a car going by throws the window across the wall from low down
   if (passing.x == 2.0) {
     float pr = passing.y;
