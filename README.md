@@ -125,7 +125,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 
 ## Setup with Nix
 
-- `nix develop` opens a dev shell with Rust, clippy, jq, Node, glpaper and Chromium, plus the GL and Wayland libraries on `LD_LIBRARY_PATH`. `wl.sh`, `run.sh` and `shot.sh` enter it themselves.
+- `nix develop` (or direnv, through `.envrc`) opens a dev shell with Rust, clippy, jq, Node, glpaper and Chromium, plus the GL and Wayland libraries on `LD_LIBRARY_PATH`. `wl.sh`, `run.sh` and `shot.sh` enter it themselves.
 - `nix build` (or `nix run . -- run`) builds a packaged `windowlight` plus `windowlight-adapter-herdr` and `windowlight-adapter-system`, with nothing tied to this checkout.
 - Your own settings live in `~/.config/windowlight/`: `favourites.txt`, and `signals.map` if you want a different mapping. `WINDOWLIGHT_FAVS` and `WINDOWLIGHT_SIGNAL_MAP` point elsewhere.
 - Linux and Wayland only; the wallpaper needs a compositor with layer-shell, and workspace moods and breeze need niri.

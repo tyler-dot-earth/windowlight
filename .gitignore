@@ -8,3 +8,4 @@ shots/
 *.mp4
 *.webm
 *.bundle
+.direnv/
