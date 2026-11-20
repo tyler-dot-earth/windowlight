@@ -2,160 +2,347 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>windowlight</title>
 <style>
-  :root { --bg:#211d19; --card:#2c2621; --ink:#f1e6d6; --dim:#a89a88; --sun:#f0b45a; --line:#43392f; }
+  :root {
+    --bg:#1b1815; --card:#26211d; --card2:#2e2823; --ink:#f3e9db; --dim:#a39584; --faint:#6f6457;
+    --sun:#f2b65c; --sunink:#2a1d0c; --line:#3b332c; --chip:#352e28; --chiphi:#433a32;
+    --busy:#f2b65c; --waiting:#e9785f; --done:#86c08a; --quiet:#6f6457;
+    --r:16px;
+  }
   * { box-sizing:border-box }
-  body { margin:0; background:radial-gradient(1200px 700px at 75% -10%, #4a3a26 0%, var(--bg) 60%); color:var(--ink);
-         font:15px/1.4 ui-sans-serif, system-ui, sans-serif; min-height:100vh }
-  main { max-width:760px; margin:0 auto; padding:28px 20px 60px }
-  h1 { font-weight:600; letter-spacing:.02em; margin:0; font-size:22px }
-  h1 span { color:var(--sun) }
-  .top { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:18px }
-  #clock { color:var(--dim); font-variant-numeric:tabular-nums }
-  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin:12px 0 }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin:0 0 10px; font-weight:600 }
+  html { color-scheme:dark }
+  body { margin:0; color:var(--ink); min-height:100vh; font:14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         background:radial-gradient(1100px 600px at 80% -12%, #4b3a24 0%, transparent 65%),
+                    radial-gradient(900px 500px at -10% 110%, #2b2a35 0%, transparent 60%), var(--bg); background-attachment:fixed }
+  main { max-width:1180px; margin:0 auto; padding:22px 22px 70px }
+
+  /* header */
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px }
+  h1 { margin:0; font-size:21px; font-weight:650; letter-spacing:.01em; display:flex; align-items:center; gap:10px }
+  h1 span span { color:var(--sun) }
+  h1 i { width:22px; height:22px; border-radius:6px; display:inline-block;
+         background:linear-gradient(135deg, #f7d08a, #e48f3c); box-shadow:0 0 18px #f2b65c66 }
+  .status { display:flex; gap:6px; flex-wrap:wrap }
+  .pill { background:#ffffff0d; border:1px solid var(--line); border-radius:999px; padding:4px 11px; color:var(--dim);
+          font-size:13px; font-variant-numeric:tabular-nums; white-space:nowrap }
+  .pill b { color:var(--ink); font-weight:550 }
+  .pill.hot { color:var(--sunink); background:var(--sun); border-color:var(--sun) }
+  .pill.off { color:#ffb4a4; border-color:#6a3b30 }
+
+  /* layout */
+  .cols { display:grid; gap:16px; grid-template-columns:minmax(0, 1fr) }
+  @media (min-width:980px) {
+    .cols { grid-template-columns:minmax(0, 440px) minmax(0, 1fr) }
+    .left { position:sticky; top:16px; align-self:start }
+  }
+  .left, .right { display:flex; flex-direction:column; gap:16px; min-width:0 }
+  /* one column: the scene controls come right after the preview */
+  @media (max-width:979px) { .left, .right { display:contents } section { order:var(--o) } }
+  section { background:linear-gradient(180deg, var(--card2), var(--card)); border:1px solid var(--line); border-radius:var(--r);
+            padding:16px 18px; box-shadow:0 10px 30px #0004 }
+  h2 { font-size:11.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--dim); margin:0 0 12px; font-weight:650;
+       display:flex; justify-content:space-between; align-items:baseline; gap:10px }
+  h2 small { text-transform:none; letter-spacing:0; font-weight:400; color:var(--faint); font-size:12px }
+  h3 { font-size:12.5px; color:var(--dim); font-weight:550; margin:0 0 7px }
+  .group + .group { margin-top:16px; padding-top:14px; border-top:1px solid var(--line) }
+
+  /* now card */
+  .preview { position:relative; aspect-ratio:16/9; border-radius:12px; overflow:hidden; background:#0d0b0a;
+             border:1px solid #00000080; box-shadow:inset 0 0 0 1px #ffffff10 }
+  .preview img { width:100%; height:100%; object-fit:cover; display:block; opacity:0; transition:opacity .4s }
+  .preview img.ok { opacity:1 }
+  .preview .tag { position:absolute; left:10px; bottom:10px; background:#000a; backdrop-filter:blur(6px); border-radius:8px;
+                  padding:4px 9px; font-size:12.5px; color:var(--ink) }
+  .preview .asleep { position:absolute; inset:0; display:none; place-items:center; color:var(--dim); font-size:15px; background:#000c }
+  .preview.zz .asleep { display:grid }
+  .actions { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:8px; margin-top:12px }
+  .summon { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:8px }
+
+  /* controls */
   .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center }
-  .row + .row { margin-top:10px }
-  button { background:#3a322b; color:var(--ink); border:1px solid #514538; border-radius:999px; padding:6px 13px;
-           font:inherit; cursor:pointer; transition:background .15s }
-  button:hover { background:#4a3f35 }
-  button.on { background:var(--sun); color:#2a1d0c; border-color:var(--sun) }
-  button.big { padding:9px 18px; font-weight:600 }
-  label { color:var(--dim); font-size:13px; display:flex; align-items:center; gap:8px }
-  input[type=range] { width:220px; accent-color:var(--sun) }
-  select { background:#3a322b; color:var(--ink); border:1px solid #514538; border-radius:8px; padding:5px 8px; font:inherit }
-  .num { min-width:3.5ch; color:var(--ink); font-variant-numeric:tabular-nums }
-  .grid { display:grid; grid-template-columns:72px 1fr; gap:10px 12px; align-items:start }
-  .grid > b { color:var(--dim); font-weight:500; font-size:13px; padding-top:6px }
-  #favs div { display:flex; gap:8px; align-items:center; padding:5px 0; border-top:1px solid var(--line); font-size:13px }
-  #favs div:first-child { border-top:0 }
-  #favs code { flex:1; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-  #msg { color:var(--dim); font-size:13px; min-height:1.4em; margin-top:8px }
-  .heart.on { background:#e0607a; border-color:#e0607a; color:white }
+  button { background:var(--chip); color:var(--ink); border:1px solid #4a4037; border-radius:999px; padding:6px 13px;
+           font:inherit; cursor:pointer; transition:background .15s, border-color .15s, transform .08s; white-space:nowrap }
+  button:hover { background:var(--chiphi) }
+  button:active { transform:scale(.97) }
+  button.on { background:var(--sun); color:var(--sunink); border-color:var(--sun); font-weight:550 }
+  .tile { border-radius:12px; padding:10px 8px; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:13px }
+  .tile .ic { font-size:19px; line-height:1.1 }
+  .tile.primary { background:linear-gradient(180deg, #f6c473, #e9a142); color:var(--sunink); border-color:#f6c473; font-weight:600 }
+  .tile.primary:hover { background:linear-gradient(180deg, #f9cf86, #eeab53) }
+  .tile.heart.on { background:#d9566f; border-color:#d9566f; color:white }
+  .swatch { display:inline-flex; align-items:center; gap:7px }
+  .swatch i { width:13px; height:13px; border-radius:50%; display:inline-block; box-shadow:inset 0 0 0 1px #0005 }
+  .slider { display:grid; grid-template-columns:62px 1fr 64px; align-items:center; gap:10px; margin-top:8px }
+  .slider span:first-child { color:var(--dim) }
+  .slider .num { text-align:right; font-variant-numeric:tabular-nums }
+  input[type=range] { width:100%; accent-color:var(--sun) }
+  .settings { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px }
+  .settings label { display:flex; flex-direction:column; gap:5px; color:var(--dim); font-size:12.5px }
+  select { appearance:none; background:var(--chip) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23a39584'/%3E%3C/svg%3E") no-repeat right 11px center;
+           color:var(--ink); border:1px solid #4a4037; border-radius:10px; padding:7px 28px 7px 11px; font:inherit; cursor:pointer }
+  select:hover { background-color:var(--chiphi) }
+
+  /* signals */
+  .sig { display:grid; grid-template-columns:10px minmax(80px, 1fr) 96px 90px auto; gap:10px; align-items:center;
+         padding:8px 0; border-top:1px solid var(--line) }
+  .sig:first-child { border-top:0; padding-top:2px }
+  .dot { width:9px; height:9px; border-radius:50% }
+  .sig .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .sig .name small { color:var(--faint); margin-left:6px }
+  .sig .state { color:var(--dim); font-size:12.5px }
+  .bar { height:6px; border-radius:3px; background:#ffffff12; overflow:hidden }
+  .bar i { display:block; height:100%; border-radius:3px }
+  .drives { display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap }
+  .tagc { font-size:11.5px; padding:2px 8px; border-radius:999px; background:#ffffff0f; border:1px solid var(--line); color:var(--dim) }
+  .tagc.live { color:var(--ink); border-color:#6a5638 }
+  .foot { margin-top:12px; padding-top:10px; border-top:1px solid var(--line); color:var(--faint); font-size:12px; display:grid; gap:6px }
+  .foot code { color:var(--dim); word-break:break-all }
+  .empty { color:var(--faint); font-size:13px; padding:4px 0 }
+  .err { color:#ffb4a4 }
+
+  /* favourites */
+  .favs { display:grid; gap:8px }
+  .fav { display:flex; align-items:center; gap:10px; padding:8px 8px 8px 12px; border-radius:12px; background:#ffffff08;
+         border:1px solid var(--line); cursor:pointer; transition:background .15s }
+  .fav:hover { background:#ffffff12 }
+  .fav.cur { border-color:var(--sun); background:#f2b65c14 }
+  .fav i { width:16px; height:16px; border-radius:5px; flex:none; box-shadow:inset 0 0 0 1px #0005 }
+  .fav .what { flex:1; min-width:0 }
+  .fav .what b { display:block; font-weight:550; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .fav .what small { color:var(--faint) }
+  .fav button { padding:3px 9px; background:transparent; border-color:transparent; color:var(--faint) }
+  .fav button:hover { color:#ffb4a4; background:#ffffff0c }
+
+  /* toast */
+  #toast { position:fixed; left:50%; bottom:22px; transform:translate(-50%, 20px); opacity:0; pointer-events:none;
+           background:#14110fee; border:1px solid var(--line); border-radius:12px; padding:9px 15px; max-width:min(640px, 90vw);
+           color:var(--ink); font-size:13px; box-shadow:0 12px 30px #0008; transition:opacity .2s, transform .2s;
+           overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  #toast.show { opacity:1; transform:translate(-50%, 0) }
+  #toast.err { border-color:#6a3b30; color:#ffb4a4 }
 </style></head>
 <body><main>
-  <div class="top"><h1>window<span>light</span></h1><div id="clock"></div></div>
+  <header>
+    <h1><i></i><span>window<span>light</span></span></h1>
+    <div class="status" id="status"></div>
+  </header>
 
-  <section>
-    <div class="row">
-      <button class="big" data-cmd="random all">shuffle now</button>
-      <button class="big heart" id="keep">♡ keep</button>
-      <button data-cmd="cat">🐈 cat</button>
-      <button data-cmd="bird">🐦 birds</button>
-      <button data-cmd="car">🚗 car</button>
-      <button data-cmd="gust 0.9">breeze</button>
-      <button data-cmd="now">real sun</button>
-      <button id="sleep">sleep</button>
+  <div class="cols">
+    <div class="left">
+      <section style="--o:1">
+        <h2>now</h2>
+        <div class="preview" id="preview"><img id="shot" alt="the wallpaper right now"><div class="tag" id="tag"></div><div class="asleep">asleep</div></div>
+        <div class="actions">
+          <button class="tile primary" data-cmd="random all"><span class="ic">✦</span>shuffle</button>
+          <button class="tile heart" id="keep"><span class="ic">♡</span><span>keep</span></button>
+          <button class="tile" id="sleep"><span class="ic">☾</span><span>sleep</span></button>
+        </div>
+        <div class="summon">
+          <button class="tile" data-cmd="cat"><span class="ic">🐈</span>cat</button>
+          <button class="tile" data-cmd="bird"><span class="ic">🐦</span>birds</button>
+          <button class="tile" data-cmd="car"><span class="ic">🚗</span>car</button>
+          <button class="tile" data-cmd="gust 0.9"><span class="ic">🍃</span>breeze</button>
+        </div>
+      </section>
+
+      <section style="--o:5">
+        <h2>favourites <small id="favn"></small></h2>
+        <div class="favs" id="favs"></div>
+      </section>
+
+      <section style="--o:6">
+        <h2>over time</h2>
+        <div class="settings">
+          <label>shuffle every<select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
+          <label>shuffle from<select id="pool"><option value="all">everything</option><option value="favourites">favourites</option><option value="historic">historic windows</option></select></label>
+          <label>time-lapse<select id="timelapse"><option value="off">off</option><option value="day/1m">a day in 1 min</option><option value="day/2m">a day in 2 min</option><option value="day/5m">a day in 5 min</option><option value="full/5m">a full day in 5 min</option></select></label>
+          <label>birds and cars every<select id="passevery"><option>off</option><option>1m</option><option>4m</option><option>15m</option></select></label>
+          <label>cat every<select id="catevery"><option>off</option><option>2m</option><option>10m</option><option>30m</option><option>1h</option></select></label>
+        </div>
+      </section>
     </div>
-    <div id="msg"></div>
-  </section>
 
-  <section>
-    <h2>scene</h2>
-    <div class="grid">
-      <b>window</b><div class="row" id="style"></div>
-      <b>historic</b><div class="row" id="styleh"></div>
-      <b>plant</b><div class="row" id="plant"></div>
-      <b>mood</b><div class="row" id="mood"></div>
-      <b>caustic</b><div class="row" id="caustic"></div>
-      <b>extras</b><div class="row"><button id="rain">rain</button><button id="prism">suncatcher</button></div>
-      <b>season</b><div class="row" id="season"></div>
+    <div class="right">
+      <section style="--o:2">
+        <h2>window</h2>
+        <div class="group"><div class="row" id="style"></div></div>
+        <div class="group"><h3>historic</h3><div class="row" id="styleh"></div></div>
+      </section>
+
+      <section style="--o:3">
+        <h2>room</h2>
+        <div class="group"><h3>wall</h3><div class="row" id="mood"></div></div>
+        <div class="group"><h3>plant</h3><div class="row" id="plant"></div></div>
+        <div class="group"><h3>caustics and extras</h3>
+          <div class="row"><span class="row" id="caustic"></span><span style="width:10px"></span>
+            <button id="rain">🌧 rain</button><button id="prism">🔮 suncatcher</button></div>
+        </div>
+      </section>
+
+      <section style="--o:4">
+        <h2>light <small id="sunpos"></small></h2>
+        <div class="group"><h3>season</h3><div class="row" id="season"></div></div>
+        <div class="group">
+          <div class="slider"><span>facing</span><input type="range" id="facing" min="0" max="359"><span class="num" id="facingv"></span></div>
+          <div class="slider"><span>tilt</span><input type="range" id="tilt" min="-80" max="80"><span class="num" id="tiltv"></span></div>
+          <div class="row" style="margin-top:10px"><button data-cmd="now">☀ back to the real sun</button></div>
+        </div>
+      </section>
+
+
+      <section style="--o:7">
+        <h2>signals <small id="sign"></small></h2>
+        <div id="sigs"></div>
+        <div class="foot" id="sigfoot"></div>
+      </section>
     </div>
-    <div class="row" style="margin-top:14px">
-      <label>tilt <input type="range" id="tilt" min="-80" max="80"><span class="num" id="tiltv"></span></label>
-      <label>facing <input type="range" id="facing" min="0" max="359"><span class="num" id="facingv"></span></label>
-    </div>
-  </section>
-
-  <section>
-    <h2>over time</h2>
-    <div class="row">
-      <label>shuffle <select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
-      <label>from <select id="pool"><option value="all">everything</option><option value="favourites">favourites</option><option value="historic">historic windows</option></select></label>
-      <label>time-lapse <select id="timelapse"><option>off</option><option>day/1m</option><option>day/2m</option><option>day/5m</option><option>full/5m</option></select></label>
-      <label>birds/cars every <select id="passevery"><option>off</option><option>1m</option><option>4m</option><option>15m</option></select></label>
-      <label>cat every <select id="catevery"><option>off</option><option>2m</option><option>10m</option><option>30m</option><option>1h</option></select></label>
-    </div>
-  </section>
-
-  <section>
-    <h2>signals</h2>
-    <div id="sigs"></div>
-  </section>
-
-  <section>
-    <h2>favourites</h2>
-    <div id="favs"></div>
-  </section>
+  </div>
 </main>
+<div id="toast"></div>
 <script>
 const $ = id => document.getElementById(id);
-let st = null, dragging = null;
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let st = null, dragging = null, toastT = 0, shotT = 0, shotBusy = false;
+
+function toast(t) {
+  const m = $('toast');
+  m.textContent = t; m.classList.toggle('err', /^error/.test(t)); m.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => m.classList.remove('show'), 2600);
+}
 async function send(line) {
-  const r = await fetch('/cmd', { method: 'POST', body: line });
-  const t = await r.text();
-  $('msg').textContent = t.length > 160 ? t.slice(0, 160) + '…' : t;
+  let t;
+  try { t = await (await fetch('/cmd', { method: 'POST', body: line })).text(); } catch { t = 'error: windowlight isn\'t answering'; }
+  // a look comes back as flags; say it the way the favourites do
+  const o = t.startsWith('--style') ? parseFlags(t) : null;
+  toast(o ? [o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
+          : t.length > 200 ? t.slice(0, 200) + '…' : t);
   poll();
+  clearTimeout(shotT); shotT = setTimeout(shot, 1300);   // after the crossfade has mostly settled
   return t;
+}
+async function shot() {
+  clearTimeout(shotT); shotT = setTimeout(shot, 4000);
+  if (shotBusy || document.hidden) return;
+  shotBusy = true;
+  try {
+    const t = await (await fetch('/cmd', { method: 'POST', body: 'preview' })).text();
+    if (/^[A-Za-z0-9+/=]{100,}$/.test(t)) { const i = $('shot'); i.onload = () => i.classList.add('ok'); i.src = 'data:image/png;base64,' + t; }
+  } catch {}
+  shotBusy = false;
 }
 document.addEventListener('click', e => { const c = e.target.closest('[data-cmd]'); if (c) send(c.dataset.cmd); });
 $('keep').onclick = () => send(st && st.kept ? 'drop' : 'keep');
 $('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
 $('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
 $('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'));
+
+const compass = d => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((d % 360) + 360) % 360 / 45) % 8];
+const show = { facing: v => `${v}° ${compass(v)}`, tilt: v => `${v}°` };
 for (const k of ['tilt', 'facing']) {
-  $(k).oninput = () => { dragging = k; $(k + 'v').textContent = $(k).value + '°'; };
+  $(k).oninput = () => { dragging = k; $(k + 'v').textContent = show[k](+$(k).value); };
   $(k).onchange = () => { dragging = null; send(k + ' ' + $(k).value); };
 }
 const secs = s => s == null ? 'off' : s % 3600 == 0 ? s / 3600 + 'h' : s % 60 == 0 ? s / 60 + 'm' : s + 's';
-const pickSel = (el, v) => { if (![...el.options].some(o => o.value == v)) el.add(new Option(v, v)); el.value = v; };
+const pickSel = (e, v) => { if (![...e.options].some(o => o.value == v)) e.add(new Option(v, v)); e.value = v; };
 $('shuffle').onchange = e => send('set shuffle=' + e.target.value);
 $('pool').onchange = e => send('set pool=' + e.target.value);
 $('timelapse').onchange = e => send(e.target.value == 'off' ? 'now' : 'set timelapse=' + e.target.value);
 $('catevery').onchange = e => send('set cat=' + e.target.value);
 $('passevery').onchange = e => send('set passing=' + e.target.value);
 
-function chips(id, list, cur, cmd = id) {
-  const el = $(id);
-  if (el.childElementCount != list.length) {
-    el.innerHTML = '';
-    for (const name of list) { const b = document.createElement('button'); b.textContent = name; b.dataset.cmd = cmd + ' ' + name; el.append(b); }
+// one button per choice; built once, then only the highlight changes
+function chips(id, list, cur, cmd = id, deco) {
+  const box = $(id);
+  if (box.childElementCount != list.length) {
+    box.innerHTML = '';
+    list.forEach((name, i) => {
+      const b = el('button'); b.dataset.cmd = cmd + ' ' + name; b.dataset.v = name;
+      if (deco) { b.className = 'swatch'; const d = el('i'); d.style.background = deco[i]; b.append(d, name); } else b.textContent = name;
+      box.append(b);
+    });
   }
-  for (const b of el.children) b.classList.toggle('on', b.textContent == cur);
+  for (const b of box.children) b.classList.toggle('on', b.dataset.v == cur);
 }
+function parseFlags(line) {
+  const o = {}, w = line.split(/\s+/);
+  for (let i = 0; i < w.length; i++) if (w[i].startsWith('--')) o[w[i].slice(2)] = w[i + 1];
+  return o;
+}
+
 async function poll() {
-  try { st = await (await fetch('/state')).json(); } catch { $('clock').textContent = 'not running'; return; }
-  $('clock').textContent = st.clock.replace('T', '  ') + (st.timelapse ? '  · time-lapse' : '');
-  const h = st.choices.historic_from;
-  chips('style', st.choices.style.slice(0, h), st.look.style);
-  chips('styleh', st.choices.style.slice(h), st.look.style, 'style');
-  for (const k of ['plant', 'mood', 'caustic']) chips(k, st.choices[k], st.look[k]);
-  $('rain').classList.toggle('on', st.look.rain); $('prism').classList.toggle('on', st.look.prism);
-  chips('season', st.choices.season, st.season);
-  for (const b of $('season').children) b.title = b.textContent == 'auto' ? 'follows the date: ' + st.season_now : '';
-  for (const k of ['tilt', 'facing']) if (dragging != k) { $(k).value = Math.round(st.look[k]); $(k + 'v').textContent = Math.round(st.look[k]) + '°'; }
-  $('keep').textContent = st.kept ? '♥ kept' : '♡ keep'; $('keep').classList.toggle('on', st.kept);
-  $('sleep').textContent = st.asleep ? 'wake' : 'sleep';
+  try { st = await (await fetch('/state')).json(); }
+  catch { $('status').replaceChildren(el('span', 'pill off', 'not running')); return; }
+  const L = st.look, C = st.choices;
+
+  // header
+  const [day, time] = st.clock.split('T');
+  const pills = [[`<b>${time}</b> ${day}`], [`${st.season == 'auto' ? st.season_now : st.season}`],
+                 [st.sun.alt > 0 ? `sun <b>${st.sun.alt}°</b> ${compass(st.sun.az)}` : 'sun down']];
+  if (st.timelapse) pills.push([`time-lapse ${st.timelapse}`, 'hot']);
+  if (st.shuffle) pills.push([`shuffling every ${secs(st.shuffle)}`, 'hot']);
+  if (st.asleep) pills.push(['asleep', 'off']);
+  $('status').replaceChildren(...pills.map(([h, c]) => { const p = el('span', 'pill' + (c ? ' ' + c : '')); p.innerHTML = h; return p; }));
+
+  // now
+  $('tag').textContent = `${L.style} · ${L.plant == 'none' ? 'no plant' : L.plant} · ${L.mood}`;
+  $('preview').classList.toggle('zz', st.asleep);
+  $('keep').classList.toggle('on', st.kept);
+  $('keep').lastChild.textContent = st.kept ? 'kept' : 'keep'; $('keep').firstChild.textContent = st.kept ? '♥' : '♡';
+  $('sleep').lastChild.textContent = st.asleep ? 'wake' : 'sleep'; $('sleep').firstChild.textContent = st.asleep ? '☀' : '☾';
+
+  // scene
+  const h = C.historic_from;
+  chips('style', C.style.slice(0, h), L.style);
+  chips('styleh', C.style.slice(h), L.style, 'style');
+  chips('mood', C.mood, L.mood, 'mood', C.mood_wall);
+  chips('plant', C.plant, L.plant);
+  chips('caustic', C.caustic, L.caustic);
+  $('rain').classList.toggle('on', L.rain); $('prism').classList.toggle('on', L.prism);
+  chips('season', C.season, st.season);
+  for (const b of $('season').children) b.title = b.dataset.v == 'auto' ? 'follows the date: ' + st.season_now : '';
+  $('sunpos').textContent = st.sun.alt > 0 ? `sun ${st.sun.alt}° up, from the ${compass(st.sun.az)}` : 'the sun is down';
+  for (const k of ['tilt', 'facing']) if (dragging != k) { const v = Math.round(L[k]); $(k).value = v; $(k + 'v').textContent = show[k](v); }
+
+  // over time
   if (document.activeElement.tagName != 'SELECT') {
     pickSel($('shuffle'), secs(st.shuffle)); $('pool').value = st.pool;
     pickSel($('timelapse'), st.timelapse || 'off'); pickSel($('catevery'), secs(st.cat)); pickSel($('passevery'), secs(st.passing));
   }
-  const f = $('favs'); f.innerHTML = '';
-  if (!st.favs.length) f.innerHTML = '<div><code>none yet: ♡ keep saves the current look</code></div>';
+
+  // favourites
+  const f = $('favs'); f.replaceChildren();
+  $('favn').textContent = st.favs.length ? `${st.favs.length} saved` : '';
+  if (!st.favs.length) f.append(el('div', 'empty', 'None yet. Keep saves the look you\'re seeing.'));
   st.favs.forEach((line, i) => {
-    const d = document.createElement('div');
-    d.innerHTML = `<button data-cmd="fav ${i + 1}">show</button><code></code><button data-cmd="drop ${i + 1}">✕</button>`;
-    d.querySelector('code').textContent = line.replace(/--/g, '').replace(/ (tilt|facing) \S+/g, '');
-    f.append(d);
+    const o = parseFlags(line), d = el('div', 'fav' + (line == st.flags ? ' cur' : ''));
+    const sw = el('i'); sw.style.background = C.mood_wall[C.mood.indexOf(o.mood)] || '#888';
+    const what = el('div', 'what'); what.append(el('b', '', `${o.style} · ${o.plant == 'none' ? 'no plant' : o.plant}`),
+      el('small', '', [o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher'].filter(Boolean).join(' · ')));
+    const x = el('button', '', '✕'); x.title = 'remove'; x.dataset.cmd = `drop ${i + 1}`;
+    d.dataset.cmd = `fav ${i + 1}`; d.append(sw, what, x); f.append(d);
   });
-  const g = $('sigs'), sg = st.signals; g.innerHTML = '';
-  const line = t => { const d = document.createElement('div'); d.innerHTML = '<code></code>'; d.querySelector('code').textContent = t; g.append(d); };
-  if (!sg.dir) line('off');
+
+  // signals
+  const g = $('sigs'), sg = st.signals, foot = $('sigfoot');
+  g.replaceChildren(); foot.replaceChildren();
+  $('sign').textContent = sg.dir ? `${sg.live.length} live` : '';
+  if (!sg.dir) g.append(el('div', 'empty', 'Off. Start with --signals DIR to let other programs move the room.'));
   else {
-    for (const x of sg.live) line(`${x.label}  ·  ${x.state}${x.state == 'quiet' ? '' : ' ' + Math.round(x.level * 100) + '%'}  →  ${x.drives.join(', ') || 'nothing'}`);
-    if (!sg.live.length) line('none yet in ' + sg.dir);
-    for (const e of sg.errors) line('map: ' + e);
+    for (const x of sg.live) {
+      const r = el('div', 'sig'), col = `var(--${x.state in { busy: 1, waiting: 1, done: 1 } ? x.state : 'quiet'})`;
+      const dot = el('i', 'dot'); dot.style.background = col;
+      const nm = el('div', 'name', x.label); if (x.label != x.name) nm.append(el('small', '', x.name));
+      const bar = el('div', 'bar'), fill = el('i'); fill.style.width = Math.round(x.level * 100) + '%'; fill.style.background = col; bar.append(fill);
+      const dr = el('div', 'drives');
+      for (const b of x.drives) dr.append(el('span', 'tagc live', b));
+      if (!x.drives.length) dr.append(el('span', 'tagc', 'nothing'));
+      r.append(dot, nm, el('div', 'state', `${x.state} ${Math.round(x.level * 100)}%`), bar, dr); g.append(r);
+    }
+    if (!sg.live.length) g.append(el('div', 'empty', 'Nothing has written a signal yet.'));
+    for (const e of sg.errors) foot.append(el('div', 'err', 'map: ' + e));
+    const rules = el('div', 'row'); for (const r of sg.rules) rules.append(el('span', 'tagc', r)); foot.append(rules);
+    const p = el('div'); p.append('signals in ', el('code', '', sg.dir), ' · map ', el('code', '', sg.map)); foot.append(p);
   }
 }
-poll(); setInterval(poll, 1500);
+poll(); setInterval(poll, 1500); shot();
 </script>
 </body></html>

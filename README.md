@@ -38,7 +38,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 ## native (round five)
 
 - Control page at <http://127.0.0.1:7417/> while `./wl.sh run` is up (`--ui PORT` or `--ui off`):
-  - It has buttons for every window, plant, mood and caustic, plus a rain toggle and tilt and facing sliders.
+  - It shows a live preview, with buttons for every window, plant, mood and caustic, plus a rain toggle and tilt and facing sliders.
   - It also has shuffle, time-lapse and cat-interval pickers, and keep, sleep and real-sun buttons.
   - It answers only requests addressed to localhost and refuses commands sent from other sites.
 - Four more windows: `porthole`, `stained` (coloured light through jewel panes and a rose), `slats` (boards with knots) and `jali` (a carved star screen).
@@ -122,6 +122,16 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Now the plaster bakes as height only at 4096 per tile (2048 texels per wall unit, finer than 4K draws it), in the same memory as before.
 - The slope is taken per screen pixel when drawing, and the noise is gradient noise, so no grid shows.
 - The live wallpaper picks the first monitor unless `--output NAME` names one; `run.sh` (the old glpaper path) now needs the output name.
+
+## Round ten: a tidier control page
+
+- The control page opens on a live preview of the wallpaper, a 640×360 still the app renders on request (`ctl preview` returns it as base64 PNG) and refreshes every 4 seconds.
+- Shuffle, keep and sleep sit under the preview, with cat, birds, car and breeze below them.
+- Window, room and light controls are grouped into their own cards. Wall moods show their colour, and facing reads as a compass direction.
+- The header shows the clock, the season and where the sun is, plus badges for time-lapse, shuffling or sleep.
+- Favourites read as "georgian · ficus" with a wall swatch; signals show a coloured state dot, a level bar and what each one drives.
+- Replies appear as a short toast. On a phone-width screen the cards stack with the scene controls straight after the preview.
+- `state` now also reports the sun's altitude and compass bearing and each mood's wall colour.
 
 ## Setup with Nix
 

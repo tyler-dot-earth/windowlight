@@ -359,6 +359,9 @@ impl App {
         let l = &self.look;
         let favs = load_favs();
         let key = fav_key(l);
+        let (alt, az) = sun::position(self.sim_ms(now), self.o.lat, self.o.lon);
+        let hex = |c: [f32; 3]| format!("#{:02x}{:02x}{:02x}", (c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
+        let walls: Vec<String> = (0..MOODS.len()).map(|i| hex(Mood::named(i).wall)).collect();
         serde_json::json!({
             "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "mood": MOODS[l.mood], "caustic": CAUSTICS[l.caustic],
                       "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism },
@@ -368,8 +371,9 @@ impl App {
             "season": SEASONS[self.o.season.unwrap_or(4)], "season_now": SEASONS[self.season(now).iter().enumerate().fold(0, |b, (i, x)| if *x > self.season(now)[b] { i } else { b })],
             "kept": favs.iter().any(|f| Look::from_flags(f).map(|x| fav_key(&x)) == Some(key.clone())),
             "favs": favs,
+            "sun": { "alt": alt.to_degrees().round(), "az": az.to_degrees().rem_euclid(360.0).round() },
             "signals": self.sig.state(),
-            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "caustic": CAUSTICS, "season": SEASONS },
+            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "mood_wall": walls, "caustic": CAUSTICS, "season": SEASONS },
         }).to_string()
     }
 }
@@ -415,7 +419,7 @@ impl App {
     }
 
     /// handle one control line; returns the reply
-    pub unsafe fn command(&mut self, _r: &Renderer, line: &str) -> String {
+    pub unsafe fn command(&mut self, r: &Renderer, line: &str) -> String {
         let now = Instant::now();
         let mut words = line.split_whitespace();
         let cmd = words.next().unwrap_or("");
@@ -490,7 +494,7 @@ impl App {
             }
             "cat" => {
                 if arg == "off" || arg == "every" || arg.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                    return self.command(_r, &format!("set cat={}", if arg == "every" { rest.get(1).copied().unwrap_or("10m") } else { arg }));
+                    return self.command(r, &format!("set cat={}", if arg == "every" { rest.get(1).copied().unwrap_or("10m") } else { arg }));
                 }
                 if self.cat.is_some() { return "the cat is already out".into(); }
                 self.cat = Some(CatWalk::new(&mut self.rng, now));
@@ -562,6 +566,16 @@ impl App {
                 self.look.flags()
             }
             "state" => self.state(now),
+            // a small still of the current frame for the control page, as base64 PNG
+            "preview" => {
+                let (w, h) = (640, 360);
+                let c = r.canvas(w, h);
+                let f = self.frame(now);
+                r.draw(&mut self.cur, &f, Some(c.fb), w, h, 1.0);
+                let rgb = r.read_rgb(&c);
+                r.drop_target(c);
+                base64(&png_bytes(w, h, &rgb))
+            }
             // lock screen hooks: sleep fades to dark and stops drawing; wake fades in while the sun sweeps up to now
             "sleep" => { self.fade = Tween { from: self.fade.at(now), to: 0.0, t0: now, dur: 0.8 }; "sleeping".into() }
             "wake" => {
@@ -624,4 +638,23 @@ impl Lapse {
         s(f / w) * s((1.0 - f) / w)
     }
     fn middle(&self) -> f64 { self.start_ms + self.span_ms * 0.5 }
+}
+
+fn png_bytes(w: i32, h: i32, rgb: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, w as u32, h as u32);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    if let Ok(mut wr) = enc.write_header() { let _ = wr.write_image_data(rgb); }
+    out
+}
+
+fn base64(b: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(b.len().div_ceil(3) * 4);
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 { s.push(if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' }); }
+    }
+    s
 }

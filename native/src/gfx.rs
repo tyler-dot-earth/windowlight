@@ -191,6 +191,8 @@ impl Renderer {
     /// offscreen RGBA8 target for stills
     pub unsafe fn canvas(&self, w: i32, h: i32) -> Target { target(&self.gl, (w, h), glow::RGBA8, false, false) }
 
+    pub unsafe fn drop_target(&self, t: Target) { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
+
     pub unsafe fn read_rgb(&self, t: &Target) -> Vec<u8> {
         let gl = &self.gl;
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(t.fb));
