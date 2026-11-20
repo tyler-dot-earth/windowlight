@@ -16,3 +16,19 @@ Throwaway spike: sunlight through a window onto a wall as a live niri wallpaper,
 - `shot.sh` renders a still with headless Chrome, and `shots/v4/` holds the style, mood and scene sheets and a terracotta time-lapse; `shots/v5/` holds the caustics, tilt and day sheets and `ripples.gif`
 
 Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real lat/lon.
+
+## native (round four)
+
+`native/` is the same scene as a Rust program that draws at the monitor's full resolution through OpenGL ES, with no browser or glpaper.
+
+- Slow parts are baked into textures: the plaster once, the window shape when the style or angle changes, and the leaves and pool ripples at a small size each frame. The full-resolution pass only does a handful of texture lookups per pixel; soft shadow edges come from blurrier mip levels
+- Cost at 3840x2160 on the RX 7800 XT: 0.6 to 1.4 ms per frame offscreen (worst is olive plus both caustics), about 4% of the card at 30 fps and 9% at 60. Live on DP-2 at 30 fps the desktop's GPU load stayed in the same 5 to 10% range it shows without it
+- `native/wl.sh` builds it with nix tools (cargo cache stays in the folder) and runs it:
+  - `./wl.sh run --plant olive --caustic both` draws on DP-2 (`--output`, `--fps 30`, `--scale 0.5` for a cheaper half-resolution buffer)
+  - `./wl.sh run --workspaces linen,sage,nocturne,terracotta` follows niri and fades the mood when the active workspace on that output changes
+  - `./wl.sh run --random` picks a look at start, and `--shuffle 30` picks a new one every 30 minutes
+  - `./wl.sh ctl random all`, `ctl mood sage`, `ctl set style=arch tilt=50`, `ctl get` change the running wallpaper; mood-only changes tween the colours and anything else crossfades
+  - `./wl.sh ctl sleep` fades to dark and stops drawing; `ctl wake` fades back in while the sun sweeps up from 70 minutes earlier, meant for a locker's before-lock and after-unlock hooks
+  - `./wl.sh sample 24 dir` renders 24 random looks in daylight with `dir/looks.txt` holding each one's flags, and `./wl.sh shot out.png --size 3840x2160 ...` renders one still
+  - `./wl.sh bench` times frames at 4K
+- `native/sheet-random.jpg` is a 24-look sample sheet
