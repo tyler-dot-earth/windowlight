@@ -721,7 +721,7 @@ vec3 carafe(vec2 l, float pen){
     float s = 1.0 - smoothstep(r - w*1.5, r + w*1.5, d);
     if (k == 0) spot.r = s; else if (k == 1) spot.g = s; else spot.b = s;
   }
-  float arc = exp(-pow((length(v - vec2(0.0, 0.05)) - 0.115)/(0.006 + w), 2.0)) * smoothstep(-0.02, -0.07, v.y) * step(sd, 0.0);
+  float arc = exp(-pow((length(v - vec2(0.0, 0.05)) - 0.115)/(0.006 + w), 2.0)) * smoothstep(-0.02, -0.07, v.y) * inside;
   T += water*(spot*vec3(3.4, 3.2, 3.0) + arc*2.2*vec3(1.0, 0.95, 0.85));
   return mix(vec3(1.0), T, inside);
 }

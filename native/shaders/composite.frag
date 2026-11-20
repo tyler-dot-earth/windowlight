@@ -27,6 +27,17 @@ float softFol(vec2 q, float r){
   return s/6.0;
 }
 
+// the carafe through the same blur disk as the frame, so it is never sharper than the window around it
+vec3 softCarafe(vec2 l, float r){
+  if (length(l - vec2(0.2, -WH.y + 0.205)) > 0.22 + 2.0*r) return vec3(1.0);
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 6; i++){
+    float a = float(i)*2.39996 + jit, rr = sqrt((float(i) + .5)/6.0)*r;
+    s += carafe(l + rr*vec2(cos(a), sin(a)), 0.55*r);
+  }
+  return s/6.0;
+}
+
 // where the line toward the light from wall point p meets the plane at depth D, in that plane's coords;
 // k pulls far planes back over the patch so the plant and birds stay in the light whatever the sun does
 vec2 planeQ(vec3 p, vec3 pcw, vec3 n, vec3 ua, vec3 L, float ns, float D, float k){
@@ -91,7 +102,7 @@ void main(){
       float occB = softFol(vec2(0.95 - qb.x, qb.y)*0.9 + vec2(0.0, 0.12), (0.004 + 0.007*tb)*hz*0.9);
       trans *= mix(vec3(1.0), leafTint(), occB*0.8*(0.95 - 0.45*haze));
     }
-    if (caustic >= 2) trans *= carafe(q - WC, pen);
+    if (caustic >= 2) trans *= softCarafe(q - WC, pen);
     trans *= prismT(q - WC, pen);
     if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
     if (flockN > 0) trans *= flockT(q - WC, planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), pen, (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
