@@ -22,8 +22,10 @@ uniform int flockN;
 uniform float dust;      // 0..1 more dust in the light shaft
 uniform float frostSig;  // 0..1 frost on the glass, any season
 uniform float spinPh;    // extra turn of the suncatcher
-uniform int lamp;        // 0 none 1 neon 2 sodium 3 halide 4 blurple 5 full-spectrum 6 t5
+uniform int lamp;        // 0 none 1 neon 2 sodium 3 halide 4 blurple 5 full-spectrum 6 t5 7-10 flames 11-13 projectors
 uniform float lampK;     // 0..1 how far on it is
+uniform float heat;      // 0..1 warm air rising off a radiator under the window
+uniform vec3 boltU;      // lightning: seconds since the strike (negative: none), side of the sky, seed
 
 const float D_WIN = 0.55;
 const float D_PLANT = 1.05;
@@ -37,6 +39,9 @@ const vec2 AP_MIN = vec2(-0.45, -0.05);
 const vec2 AP_SIZE = vec2(1.2, 1.35);
 const vec2 FOL_MIN = vec2(-1.25, -0.65);
 const vec2 FOL_SIZE = vec2(2.9, 2.7);
+// the stretch of wall the sun-fade map covers, wider than any view pans
+const vec2 FADE_MIN = vec2(-3.2, -1.4);
+const vec2 FADE_SIZE = vec2(6.4, 3.9);
 const float TILE = 2.0;  // plaster tile size in wall units
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }

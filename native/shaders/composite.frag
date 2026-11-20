@@ -1,7 +1,7 @@
 // every frame, full resolution: wall, light and grading, reading the baked textures
 in vec2 vUv; out vec4 fragColor;
 uniform vec2 res;
-uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus;
+uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus, uFade;
 uniform vec2 apTexel, folTexel;   // texels per unit
 uniform vec3 wallA, sunTint, shadeTint, nightTint;
 uniform float mottle, bumpAmt, expo, sat, contrast, ambAmt, fade, lightK;
@@ -58,6 +58,17 @@ float lampLeaf(vec3 p0, vec3 e, float sz, vec2 at){
   return 1.0 - 0.85*softFol(hit + at, 0.004 + sz*ZP/(e.z - ZP));
 }
 
+// lightning: a faint leader, the strike, and often a second or third flicker after it. Returns how bright it is
+// now (0 most of the time) and, in y, which side of the sky it came from
+vec2 bolt(){
+  float t = boltU.x, sd = boltU.z;
+  if (t < 0.0 || t > 2.5) return vec2(0.0);
+  float f = 0.25*exp(-pow((t - 0.03)/0.025, 2.0)) + step(0.09, t)*exp(-(t - 0.09)*12.0);
+  if (hash(vec2(sd, 3.0)) > 0.3) f += 0.8*step(0.28, t)*exp(-(t - 0.28)*9.0);
+  if (hash(vec2(sd, 5.0)) > 0.55) f += 0.5*step(0.7, t)*exp(-(t - 0.7)*6.0);
+  return vec2(f, boltU.y);
+}
+
 void main(){
   vec2 fc = gl_FragCoord.xy;
   jit = hash(fc)*6.2831;
@@ -88,6 +99,14 @@ void main(){
   vec2 pg = vec2(texture(uPlaster, pt + vec2(pe/TILE, 0.0)).r - texture(uPlaster, pt - vec2(pe/TILE, 0.0)).r,
                  texture(uPlaster, pt + vec2(0.0, pe/TILE)).r - texture(uPlaster, pt - vec2(0.0, pe/TILE)).r)/(2.0*pe);
   vec3 nb = normalize(vec3(-pg*0.010*bumpAmt, 1.0));
+  // years of sun have bleached the paint where the window throws it: paler and duller there, a soft ghost of
+  // the patch that shows best when the light is somewhere else
+  vec2 fq = (uv - FADE_MIN)/FADE_SIZE, fs_ = 1.0/vec2(384.0, 234.0);
+  float acc = 0.25*(texture(uFade, fq + fs_*vec2(1.5, 0.7)).r + texture(uFade, fq - fs_*vec2(1.5, 0.7)).r
+                  + texture(uFade, fq + fs_*vec2(-0.7, 1.5)).r + texture(uFade, fq - fs_*vec2(-0.7, 1.5)).r);
+  float sunned = smoothstep(0.02, 0.3, acc);
+  float wl = dot(wall, vec3(0.2126, 0.7152, 0.0722));
+  wall = mix(wall, mix(vec3(wl), wall, 0.62)*1.25 + 0.015, sunned*0.5);
   vec4 skin = texture(uSkin, pt);
   wall *= skin.rgb;
 
@@ -102,11 +121,21 @@ void main(){
     float tw = (D_WIN - dot(n, p))/ns;   vec3 hw = p + tw*L;
     float tp = (D_PLANT - dot(n, p))/ns; vec3 hp = p + tp*L;
     vec2 q = vec2(dot(ua, hw), hw.y), qp = vec2(dot(ua, hp), hp.y);
+    // warm air rising off a radiator under the window bends the light on its way in, most just over the sill:
+    // the shadows waver and faint bright ripples climb through the patch
+    float shim = 1.0;
+    if (heat > 0.01) {
+      float w = heat*smoothstep(0.8, 0.0, q.y - (WC.y - WH.y));
+      vec2 hq_ = q*vec2(7.0, 3.5) + vec2(0.0, -time*1.3);
+      vec2 wob = (vec2(noise(hq_), noise(hq_ + vec2(5.2, 1.3))) - 0.5)*2.0 + 0.5*(vec2(noise(hq_*2.3 + 9.0), noise(hq_*2.3 + 3.0)) - 0.5);
+      q += wob*0.007*w; qp += wob*0.009*w;
+      shim = 1.0 + 0.35*w*(noise(q*vec2(16.0, 6.0) + vec2(0.0, -time*1.8)) - 0.5);
+    }
     vec3 pcw = vec3(pc, 0.0); vec3 hc = pcw + (D_PLANT - dot(n, pcw))/ns*L;
     qp -= (vec2(dot(ua, hc), hc.y) - WC)*0.8;
     float hz = 1.0 + 7.0*haze;
     float pen = (0.004 + 0.004*tw)*hz;
-    vec3 lit = softAp(q, pen);
+    vec3 lit = softAp(q, pen)*shim;
     float litM = clamp(dot(lit, vec3(0.3333)), 0.0, 1.0);
     vec3 trans = vec3(1.0);
     if (plantType > 0) {
@@ -217,7 +246,34 @@ void main(){
   // so panels and tubes give soft shadows and the blurple's red and blue diodes split them into colours
   if (lamp > 0 && lampK > 0.001) {
     vec3 p0 = vec3(uv, 0.0);
-    if (lamp == 1) {
+    if (lamp >= 11) {
+      // a sunset projector on the floor across the room, tipped up at the wall: a big disc of graded colour,
+      // stretched a little by the slant, its rim bleeding into a glow; the lens is small, so the plant's
+      // shadow inside the disc comes out sharp
+      // it stands in the room, but the view pans with the daylight, so the disc follows the view most of the way
+      vec3 c = vec3(vec2(-0.35, 0.58) + shift*0.85, 0.0);
+      vec3 e = c + vec3(0.9, -1.3, 2.9);
+      vec3 ax = normalize(c - e), d = p0 - e;
+      float dl = length(d);
+      float t = acos(clamp(dot(d/dl, ax), -1.0, 1.0))/atan(0.5/length(c - e));
+      float disc = smoothstep(1.025, 0.975, t);
+      vec3 tint;
+      if (lamp == 11) tint = mix(vec3(1.0, 0.66, 0.16), vec3(1.0, 0.2, 0.03), smoothstep(0.1, 1.0, t))*(1.0 + 0.7*(1.0 - t*t));
+      else if (lamp == 12) {
+        // gold in the middle through red and magenta to blue at the rim, the way the rainbow lenses run
+        tint = mix(vec3(1.0, 0.82, 0.25), vec3(1.0, 0.3, 0.08), smoothstep(0.05, 0.45, t));
+        tint = mix(tint, vec3(0.95, 0.12, 0.55), smoothstep(0.4, 0.7, t));
+        tint = mix(tint, vec3(0.35, 0.25, 1.0), smoothstep(0.68, 0.95, t))*(1.0 + 0.6*(1.0 - t*t));
+      }
+      else tint = mix(vec3(1.0, 0.62, 0.4), vec3(1.0, 0.2, 0.48), smoothstep(0.15, 0.95, t))*(1.0 + 0.4*(1.0 - t*t));
+      vec3 rimC = lamp == 12 ? vec3(0.45, 0.2, 1.0) : lamp == 11 ? vec3(1.0, 0.16, 0.2) : vec3(1.0, 0.3, 0.6);
+      float irr = max(-d.z, 0.0)/(dl*dl*dl)*length(c - e)*length(c - e);
+      float leaf = lampLeaf(p0, e, 0.005, vec2(0.1, 0.32));
+      float on = mix(1.0, 0.35, day)*lampK;
+      col += wall*(tint*disc*leaf + rimC*0.22*exp(-max(t - 1.0, 0.0)*5.0)*(1.0 - disc))*irr*1.6*on;
+      // the beam hanging in the air on its way up
+      col += rimC*0.03*(1.0 + 2.0*haze)*exp(-3.0*length((uv - mix(e.xy, c.xy, 0.4))*vec2(1.0, 0.7)))*on;
+    } else if (lamp == 1) {
       for (int i = 0; i < 2; i++) {
         vec3 Ln = normalize(i == 0 ? vec3(0.3, 0.42, 1.0) : vec3(-0.22, 0.32, 1.0));
         float nn = dot(n, Ln);
@@ -323,6 +379,23 @@ void main(){
       // the fixture's glow hanging in the air just above the frame
       col += base*(lamp == 4 ? vec3(0.9, 0.3, 1.0) : vec3(1.0))*exp(-2.2*length((uv - Lp.xy)*vec2(0.6, 1.0)))*(0.05 + 0.08*haze)*lampK;
     }
+  }
+
+  // lightning: the whole room jumps blue-white, and the window lands on the wall hard-edged, rain and all
+  vec2 bl = bolt();
+  if (bl.x > 0.002) {
+    vec3 p0 = vec3(uv, 0.0);
+    vec3 Lb = normalize(vec3(bl.y*0.8, 0.3, 1.0));
+    float nb_ = dot(n, Lb);
+    vec3 bc = vec3(0.72, 0.8, 1.0)*bl.x*mix(1.0, 0.3, day);
+    if (nb_ > 0.05) {
+      vec3 hb = p0 + (D_WIN - dot(n, p0))/nb_*Lb;
+      vec3 lb = softAp(vec2(dot(ua, hb), hb.y), 0.008);
+      float fol = 0.0;
+      if (plantType > 0) { vec3 hp2 = p0 + (D_PLANT - dot(n, p0))/nb_*Lb; fol = softFol(vec2(dot(ua, hp2), hp2.y), 0.008); }
+      col += wall*bc*lb*(1.0 - 0.92*fol)*2.2;
+    }
+    col += wall*bc*0.12;
   }
 
   // headlights at night: a car going by throws the window across the wall from low down

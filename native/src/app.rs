@@ -136,6 +136,8 @@ pub struct App {
     gust_from: f64, gust_peak: f64, gust_t0: Instant,
     cat: Option<CatWalk>, next_cat: Instant,
     passing: Option<Passing>, next_pass: Instant,
+    /// lightning in the rain: when the last strike was, its side of the sky and seed, and when the next one comes
+    bolt: Option<(Instant, f32, f32)>, next_bolt: Instant,
     /// a clock jump waiting for the cloud to cover it
     jump: Option<f64>,
     pub sig: Signals,
@@ -194,7 +196,7 @@ impl App {
             cur: r.scene_tex(), c_from: c, c_to: c, c_k: Tween::still(1.0), cloud: None,
             fade: Tween::still(1.0), warp_min: Tween::still(0.0), asleep: false,
             rng: Rng::seeded(), last_shuffle: now, lapse: None,
-            gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, jump: None,
+            gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, bolt: None, next_bolt: now + Duration::from_secs(20), jump: None,
             sig: Signals::new(o.signals.clone(), o.signal_map.clone()), spin: 0.0, last_t: now, last_lamp: o.look.lamp, o,
         };
         // the first cat comes along a minute or three in, then about every --cat
@@ -263,6 +265,11 @@ impl App {
             rain: rain as f32, gust: self.gust(now).max(0.75 * s.amount("wind")) as f32, cat: self.cat_vec(now), light_k: lk as f32,
             prism: c.prism.max((s.amount("suncatcher") * 5.0).min(1.0)) as f32, passing: self.passing.and_then(|p| p.at(now)).unwrap_or([0.0; 4]), season: self.season(now),
             flock, flock_n, lamp: if self.look.lamp > 0 { self.look.lamp } else { self.last_lamp } as i32, lamp_k: c.lamp as f32, dust: s.amount("dust") as f32, frost: s.amount("frost") as f32, spin: self.spin as f32,
+            // the radiator is on through the winter, a little, whatever the signals say
+            path: sun::year_path(self.sim_ms(now), self.o.lat, self.o.lon, c.facing),
+            path_key: ((c.facing * 2.0).round() as i64) | (((self.o.lat * 10.0).round() as i64 + 1000) << 12) | (((self.o.lon * 10.0).round() as i64 + 2000) << 24),
+            heat: s.amount("heat").max(0.4 * self.season(now)[3] as f64) as f32,
+            bolt: self.bolt.map_or([-1.0, 0.0, 0.0], |(t, side, seed)| [secs(now, t) as f32, side, seed]),
         }
     }
 
@@ -274,6 +281,8 @@ impl App {
     }
 
     /// birds by day, a car by night, nothing in the twilight between
+    fn strike(&mut self, now: Instant) { self.bolt = Some((now, self.rng.f() as f32 - 0.5, self.rng.f() as f32 * 100.0)); }
+
     fn send_past(&mut self, now: Instant) -> Option<bool> {
         let alt = sun::position(self.sim_ms(now), self.o.lat, self.o.lon).0.to_degrees();
         let car = if alt > 4.0 { false } else if alt < -4.0 { true } else { return None };
@@ -343,6 +352,12 @@ impl App {
             }
         }
         if let Some(p) = self.passing { if p.at(now).is_none() { self.passing = None; } }
+        // a storm: while it rains, a strike now and then, at exponential gaps about a minute and a half apart
+        if self.c_to.rain.max(self.sig.amount("rain")) > 0.5 && now >= self.next_bolt {
+            self.strike(now);
+            let gap = (-90.0 * (1.0 - self.rng.f()).ln()).clamp(8.0, 360.0);
+            self.next_bolt = now + Duration::from_secs_f64(gap);
+        }
         if let Some(every) = self.o.pass_secs {
             if self.passing.is_none() && self.cat.is_none() && now >= self.next_pass {
                 self.send_past(now);
@@ -519,6 +534,7 @@ impl App {
                 self.cat = Some(CatWalk::new(&mut self.rng, now));
                 "here comes the cat".into()
             }
+            "bolt" | "lightning" => { self.strike(now); "a flash of lightning".into() }
             "bird" | "birds" | "car" | "passing" => {
                 if self.passing.is_some() { return "something is already going past".into(); }
                 match (cmd, self.send_past(now)) {
@@ -667,7 +683,7 @@ impl App {
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/material/style/plant/caustic/tilt/facing/rain/prism/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
+                  | mood/material/style/plant/caustic/tilt/facing/rain/prism/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | bolt | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
         }
     }
 }

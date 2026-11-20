@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime};
 
 /// everything a signal can drive; each takes a level (how much) and reacts to states and pulses
-pub const BEHAVIOURS: [&str; 10] = ["birds", "wind", "dust", "frost", "haze", "rain", "shade", "suncatcher", "passing", "cat"];
+pub const BEHAVIOURS: [&str; 11] = ["birds", "wind", "dust", "frost", "haze", "rain", "shade", "suncatcher", "passing", "cat", "heat"];
 /// the levels the control page can also set by hand
-pub const AIR: [&str; 5] = ["dust", "haze", "wind", "frost", "shade"];
+pub const AIR: [&str; 6] = ["dust", "haze", "wind", "frost", "shade", "heat"];
 pub const STATES: [&str; 5] = ["quiet", "busy", "waiting", "done", "alert"];
 const DEFAULT_TTL: f64 = 300.0;
 

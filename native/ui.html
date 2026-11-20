@@ -451,20 +451,23 @@ $('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
 $('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
 $('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'));
 
-const lampName = l => ['candle', 'lantern', 'fireplace', 'bonfire'].includes(l) ? l : l + ' lamp';
+const lampName = l => ['candle', 'lantern', 'fireplace', 'bonfire'].includes(l) ? l : ['sunset', 'rainbow', 'afterglow'].includes(l) ? l + ' projector' : l + ' lamp';
 const LAMP = { neon: 'a pink and teal sign across the street, brightest after dark', sodium: 'HID grow light, high-pressure sodium: deep amber, sharp shadows',
                halide: 'HID grow light, metal halide: cool white, sharp shadows', blurple: 'LED grow light, red and blue diodes: shadows split into colours',
                'full-spectrum': 'LED grow panel, warm white: soft shadows', t5: 'fluorescent tubes in a row: a shadow per tube',
                candle: 'a candle just under the plant: its shadow climbs the wall and shivers in a draught', lantern: 'a pierced tin lantern: a field of swaying dots',
-               fireplace: 'a fire low to the left: several dancing plant shadows', bonfire: 'a fire out in the yard: the window thrown up the wall, wavering in the heat' };
+               fireplace: 'a fire low to the left: several dancing plant shadows', bonfire: 'a fire out in the yard: the window thrown up the wall, wavering in the heat',
+               sunset: 'a sunset projector on the floor: a big orange disc fading to red at the rim', rainbow: 'a sunset projector with a rainbow lens: gold in the middle, violet at the rim',
+               afterglow: 'a sunset projector in peach and pink, softer' };
 // each lamp's kind and the colour of its light
 const LAMPK = { none: 'off', neon: 'across the street', sodium: 'grow lights', halide: 'grow lights', blurple: 'grow lights', 'full-spectrum': 'grow lights', t5: 'grow lights',
-                candle: 'flames', lantern: 'flames', fireplace: 'flames', bonfire: 'flames' };
+                candle: 'flames', lantern: 'flames', fireplace: 'flames', bonfire: 'flames', sunset: 'projectors', rainbow: 'projectors', afterglow: 'projectors' };
 const LAMPC = { none: 'none', neon: 'linear-gradient(135deg, #ff5fae 50%, #45e3d2 50%)', sodium: '#ffa63a', halide: '#e6eeff', blurple: 'linear-gradient(135deg, #ff4060 50%, #6c5cff 50%)',
-                'full-spectrum': '#fff0d0', t5: 'repeating-linear-gradient(90deg, #eef6ff 0 2px, #9fb4c8 2px 3px)', candle: '#ffc15a', lantern: '#ffaa40', fireplace: '#ff8030', bonfire: '#ff6224' };
-const LAMPG = { neon: '#ff5fae', blurple: '#9a4dff', t5: '#cfe4ff' };
+                'full-spectrum': '#fff0d0', t5: 'repeating-linear-gradient(90deg, #eef6ff 0 2px, #9fb4c8 2px 3px)', candle: '#ffc15a', lantern: '#ffaa40', fireplace: '#ff8030', bonfire: '#ff6224',
+                sunset: 'radial-gradient(#ffc040, #ff3010)', rainbow: 'radial-gradient(#ffd040, #ff4030 45%, #b040ff 75%, #4060ff)', afterglow: 'radial-gradient(#ffc8a0, #ff5090)' };
+const LAMPG = { sunset: '#ff6a20', rainbow: '#c050ff', afterglow: '#ff70a0', neon: '#ff5fae', blurple: '#9a4dff', t5: '#cfe4ff' };
 const AIR = { dust: 'more specks drifting in the sunbeam', haze: 'softer, milkier light', wind: 'the plant sways in a steady wind',
-              frost: 'frost on the glass, any season', shade: 'the light dims, as if a cloud is over' };
+              frost: 'frost on the glass, any season', heat: 'warm air rising off a radiator under the window makes the light shimmer; on its own a little in winter', shade: 'the light dims, as if a cloud is over' };
 
 // a day-long Bézier, midnight to midnight: both ends share one level so the day loops, the two handles are free
 const bezAt = (c, t) => {

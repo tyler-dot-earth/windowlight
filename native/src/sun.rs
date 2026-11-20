@@ -23,6 +23,23 @@ pub fn room_vec(alt: f64, az: f64, facing_deg: f64) -> [f32; 3] {
     [(-alt.cos() * rel.sin()) as f32, alt.sin() as f32, (alt.cos() * rel.cos()) as f32]
 }
 
+/// where the sun stands through a year, for the paint fading under it: six dates two months apart, twelve
+/// times through each day around solar noon. Room-frame directions; w is 1 when it is up
+pub fn year_path(ms: f64, lat: f64, lon: f64, facing_deg: f64) -> [[f32; 4]; 72] {
+    let mut out = [[0.0; 4]; 72];
+    let day0 = (ms / 86.4e6).floor() * 86.4e6;
+    for d in 0..6 {
+        let noon = day0 + d as f64 * 61.0 * 86.4e6 + (12.0 - lon / 15.0) * 3.6e6;
+        for t in 0..12 {
+            let (alt, az) = position(noon + (t as f64 - 5.5) * 1.2 * 3.6e6, lat, lon);
+            if alt <= 0.0 { continue; }
+            let v = room_vec(alt, az, facing_deg);
+            out[d * 12 + t] = [v[0], v[1], v[2], 1.0];
+        }
+    }
+    out
+}
+
 /// the light that reaches the window: the sun by day, the full-moon stand-in opposite it by night.
 /// returns (altitude, compass azimuth) in radians
 pub fn light(ms: f64, lat: f64, lon: f64) -> (f64, f64) {

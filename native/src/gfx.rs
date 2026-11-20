@@ -16,6 +16,7 @@ const FOL: (i32, i32) = (2048, 1906);
 const CAUS: (i32, i32) = (1024, 1152);
 const AP_SIZE: (f32, f32) = (1.2, 1.35);
 const FOL_SIZE: (f32, f32) = (2.9, 2.7);
+const FADE: (i32, i32) = (384, 234);
 
 pub struct Target { pub tex: glow::Texture, pub fb: glow::Framebuffer, pub w: i32, pub h: i32, mips: bool }
 
@@ -30,17 +31,23 @@ pub struct Frame {
     pub flock: [[f32; 4]; 6], pub flock_n: i32,
     /// a light of its own (index into LAMPS) and how far on it is
     pub lamp: i32, pub lamp_k: f32, pub dust: f32, pub frost: f32, pub spin: f32,
+    /// lightning: seconds since the last strike (negative for none), which side of the sky, a seed for its flickers
+    pub bolt: [f32; 3],
+    /// warm air rising under the window, 0..1
+    pub heat: f32,
+    /// the sun through a year (see sun::year_path) and what it was worked out for, so the fade redraws on change
+    pub path: [[f32; 4]; 72], pub path_key: i64,
 }
 
 /// per-scene textures (two scenes exist while crossfading)
-pub struct SceneTex { ap: Target, fol: Target, caus: Target, ap_key: Option<(i32, i32, bool, i32)> }
+pub struct SceneTex { ap: Target, fol: Target, caus: Target, fade: Target, ap_key: Option<(i32, i32, bool, i32)>, fade_key: Option<i64> }
 
 pub struct Renderer {
     pub gl: glow::Context,
     vao: glow::VertexArray,
     /// the wall material baked over one tile: relief, and colour with gloss; rebaked when the material changes
     plaster: Target, skin: Target, baked: Cell<i32>, p_surf: glow::Program,
-    p_ap: glow::Program, p_fol: glow::Program, p_caus: glow::Program, p_comp: glow::Program,
+    p_ap: glow::Program, p_fol: glow::Program, p_caus: glow::Program, p_fade: glow::Program, p_comp: glow::Program,
 }
 
 unsafe fn program(gl: &glow::Context, name: &str, frag: &str) -> Result<glow::Program, String> {
@@ -87,6 +94,7 @@ impl Renderer {
             p_ap: program(&gl, "aperture", include_str!("../shaders/aperture.frag"))?,
             p_fol: program(&gl, "foliage", include_str!("../shaders/foliage.frag"))?,
             p_caus: program(&gl, "caustic", include_str!("../shaders/caustic.frag"))?,
+            p_fade: program(&gl, "fade", include_str!("../shaders/fade.frag"))?,
             p_comp: program(&gl, "composite", include_str!("../shaders/composite.frag"))?,
             plaster: target(&gl, PLASTER, glow::R16F, true, true),
             skin: target(&gl, SKIN, glow::RGBA16F, true, true),
@@ -125,11 +133,12 @@ impl Renderer {
             ap: target(&self.gl, AP, glow::RGBA16F, true, false),
             fol: target(&self.gl, FOL, glow::R8, true, false),
             caus: target(&self.gl, CAUS, glow::R16F, true, false),
-            ap_key: None,
+            fade: target(&self.gl, FADE, glow::R16F, false, false),
+            ap_key: None, fade_key: None,
         }
     }
     pub unsafe fn drop_scene(&self, s: SceneTex) {
-        for t in [s.ap, s.fol, s.caus] { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
+        for t in [s.ap, s.fol, s.caus, s.fade] { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
     }
 
     unsafe fn uniforms(&self, p: glow::Program, f: &Frame) {
@@ -156,6 +165,9 @@ impl Renderer {
         gl.uniform_1_f32(u("spinPh").as_ref(), f.spin);
         gl.uniform_1_i32(u("lamp").as_ref(), f.lamp);
         gl.uniform_1_f32(u("lampK").as_ref(), f.lamp_k);
+        gl.uniform_3_f32_slice(u("boltU").as_ref(), &f.bolt);
+        gl.uniform_1_f32(u("heat").as_ref(), f.heat);
+        gl.uniform_4_f32_slice(u("path").as_ref(), f.path.as_flattened());
     }
 
     /// draw a fullscreen pass of `p` into `t` (or the given framebuffer), then rebuild mips
@@ -181,6 +193,16 @@ impl Renderer {
         let moving = f.cat[3] != 0.0;
         let key = (f.style, (f.tilt * 1000.0) as i32, moving, (f.season[3] * 64.0) as i32 + 1000 * (f.frost * 24.0) as i32);
         if s.ap_key != Some(key) || f.style == 6 || f.rain > 0.0 || moving { self.pass(self.p_ap, &s.ap, Some(f)); s.ap_key = Some(key); }
+        // the paint faded where the sun has fallen through the year
+        let fk = f.path_key ^ ((f.style as i64) << 40) ^ (((f.tilt * 1000.0) as i64) << 48);
+        if s.fade_key != Some(fk) {
+            gl.use_program(Some(self.p_fade));
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, Some(s.ap.tex));
+            gl.uniform_1_i32(gl.get_uniform_location(self.p_fade, "uAp").as_ref(), 0);
+            self.pass(self.p_fade, &s.fade, Some(f));
+            s.fade_key = Some(fk);
+        }
         if f.plant > 0 { self.pass(self.p_fol, &s.fol, Some(f)); }
         let pool = f.caustic == 1 || f.caustic == 3;
         if pool && f.sun_alt > 0.0 { self.pass(self.p_caus, &s.caus, Some(f)); }
@@ -210,7 +232,7 @@ impl Renderer {
                        ("contrast", m.contrast), ("ambAmt", m.amb), ("fade", f.fade), ("lightK", f.light_k)] {
             gl.uniform_1_f32(u(n).as_ref(), v);
         }
-        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus)].iter().enumerate() {
+        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus), ("uFade", &s.fade)].iter().enumerate() {
             gl.active_texture(glow::TEXTURE0 + i as u32);
             gl.bind_texture(glow::TEXTURE_2D, Some(t.tex));
             gl.uniform_1_i32(u(n).as_ref(), i as i32);

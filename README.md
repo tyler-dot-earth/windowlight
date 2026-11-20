@@ -152,6 +152,14 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - Four flames flicker, each with a flame that wanders so its shadows breathe: `candle` sits just under the plant and throws its shadow up the wall, shivering when a draught catches it; `lantern` is pierced tin, a field of swaying dots; `fireplace` is low and off to the left, several dancing plant shadows in a warm wash; `bonfire` is out in the yard, throwing the window up the wall in orange, wavering through the heat.
   - Shuffles turn one on about one look in eight; looks saved before lamps existed come back with none.
 
+## Round twelve: weather and wear
+
+- Sunset projectors, a new kind of lamp: `sunset` (gold fading to red), `rainbow` (gold through red and magenta to blue at the rim) and `afterglow` (peach and pink). Each one stands on the floor across the room and throws a big graded disc up the wall, with a sharp plant shadow inside it and a glow past the rim.
+- Lightning: while it rains, a strike comes about every minute and a half at random. The room jumps blue-white and the window lands on the wall hard-edged, raindrops and all, often with a second or third flicker after it. `ctl bolt` sends one now.
+- Heat shimmer: warm air rising off a radiator under the window makes the shadows waver and faint bright ripples climb through the patch, strongest just above the sill. It runs a little all winter, and `heat` is a new air level and signal behaviour, so a signal or the slider can turn it up.
+- Sun fade: the paint is paler and duller where the window's light falls over a year, a soft ghost of the patch that shows best when the light is elsewhere. It is worked out for the window, its angle and facing and the place, from 72 sun positions across six dates, and redrawn only when one of those changes.
+- Cost at 4K: about 1.6 ms per frame at the bench default.
+
 ## Setup with Nix
 
 - `nix develop` (or direnv, through `.envrc`) opens a dev shell with Rust, clippy, jq, Node, glpaper and Chromium, plus the GL and Wayland libraries on `LD_LIBRARY_PATH`. `wl.sh`, `run.sh` and `shot.sh` enter it themselves.
