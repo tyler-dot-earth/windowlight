@@ -93,3 +93,25 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - frost follows the rectangular frame even on arched windows;
   - snow shows in winter whatever the local climate;
   - none of this has been watched live yet.
+
+## native (round eight: signals)
+
+- Anything can drive the window by dropping a small file in `$XDG_RUNTIME_DIR/windowlight/signals/`, named after the signal:
+  - `{"level": 0.4, "state": "busy", "label": "what it is", "ttl": 15}`, every field optional;
+  - or just `0.4`, or just a state word: `quiet`, `busy`, `waiting`, `done` or `alert`.
+- `native/signals.map` says which behaviour each signal drives, one `pattern behaviour [from..to]` per line; it reloads on save.
+  - Any signal can drive any of: `birds`, `wind`, `dust`, `frost`, `haze`, `rain`, `shade`, `suncatcher`, `passing` or `cat`.
+  - Every behaviour takes a level, and reacts when a signal turns done or alert or jumps past 75%.
+  - `from..to` uses part of a level: `disk frost 0.8..1` frosts the glass only past 80% full.
+- Birds get one per signal: circling outside while busy, pecking at the glass while waiting, sitting on the sill when done, flying off when quiet or on alert.
+- Default adapters, each a short script that only reads:
+  - `native/adapters/herdr`: one `herdr-<agent>` signal per Herdr agent, from `herdr agent list` every 2 s.
+  - `native/adapters/system`: `cpu`, `net` (log scale, 1 KB/s to 100 MB/s) and `disk` (share of / used).
+- The default map: Herdr agents are birds, CPU is wind, network is dust, and a disk past 80% is frost.
+- `ctl signal NAME VALUE [ttl]` writes a signal by hand, `ctl signals` lists live ones, and the page has a signals list.
+- `--signals DIR|off` and `--signal-map FILE` move or turn them off.
+- Cost at 4K: about 0.1 ms per frame with six birds.
+- Weak spots:
+  - birds only show where sunlight or moonlight falls, so an overcast or dark scene hides them;
+  - perched birds float on round windows with no straight sill;
+  - OpenMausBot bots need to write their own signal files; nothing reads the app's internals.

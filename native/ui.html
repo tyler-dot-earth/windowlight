@@ -78,6 +78,11 @@
   </section>
 
   <section>
+    <h2>signals</h2>
+    <div id="sigs"></div>
+  </section>
+
+  <section>
     <h2>favourites</h2>
     <div id="favs"></div>
   </section>
@@ -142,6 +147,14 @@ async function poll() {
     d.querySelector('code').textContent = line.replace(/--/g, '').replace(/ (tilt|facing) \S+/g, '');
     f.append(d);
   });
+  const g = $('sigs'), sg = st.signals; g.innerHTML = '';
+  const line = t => { const d = document.createElement('div'); d.innerHTML = '<code></code>'; d.querySelector('code').textContent = t; g.append(d); };
+  if (!sg.dir) line('off');
+  else {
+    for (const x of sg.live) line(`${x.label}  ·  ${x.state}${x.state == 'quiet' ? '' : ' ' + Math.round(x.level * 100) + '%'}  →  ${x.drives.join(', ') || 'nothing'}`);
+    if (!sg.live.length) line('none yet in ' + sg.dir);
+    for (const e of sg.errors) line('map: ' + e);
+  }
 }
 poll(); setInterval(poll, 1500);
 </script>

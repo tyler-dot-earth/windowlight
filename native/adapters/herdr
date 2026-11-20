@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# windowlight adapter: one signal per Herdr agent, named herdr-<agent name, or its pane>.
+#   working -> busy, blocked -> waiting, done -> done, error -> alert, idle or unknown -> quiet
+# Reads `herdr agent list` every few seconds and never sends anything to an agent.
+# usage: adapters/herdr [SECONDS | --once]      (writes to $WINDOWLIGHT_SIGNALS, else $XDG_RUNTIME_DIR/windowlight/signals)
+set -euo pipefail
+dir=${WINDOWLIGHT_SIGNALS:-${XDG_RUNTIME_DIR:-/tmp}/windowlight/signals}
+every=${1:-2}
+mkdir -p "$dir"
+once() {
+  local json seen=" "
+  if json=$(herdr agent list 2>/dev/null); then
+    while IFS=$'\t' read -r id state label; do
+      name="herdr-$id"
+      jq -nc --arg s "$state" --arg l "$label" '{state: $s, label: $l, ttl: 15}' > "$dir/.$name.tmp"
+      mv "$dir/.$name.tmp" "$dir/$name.json"
+      seen+="$name.json "
+    done < <(jq -r '.result.agents[]
+      | [ ((.name // .pane_id) | gsub("[^A-Za-z0-9_.-]"; "-")),
+          ({"working": "busy", "blocked": "waiting", "done": "done", "error": "alert"}[.agent_status] // "quiet"),
+          ((.terminal_title_stripped // .name // .agent) | gsub("\t"; " ")) ] | @tsv' <<<"$json")
+  fi
+  # agents that have gone away take their signal with them
+  for f in "$dir"/herdr-*.json; do
+    [[ -e $f ]] || continue
+    [[ $seen == *" ${f##*/} "* ]] || rm -f "$f"
+  done
+}
+if [[ $every == --once ]]; then once; exit; fi
+while true; do once; sleep "$every"; done

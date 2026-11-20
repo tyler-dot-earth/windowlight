@@ -16,6 +16,12 @@ uniform vec4 cat;        // x position on the sill, pose (0 walk, 1 sit), leg ph
 uniform float prism;     // 0..1 a crystal suncatcher hanging in the window
 uniform vec4 passing;    // something outside: x kind (1 birds, 2 car at night), y progress 0..1, z seed, w direction
 uniform vec4 season;     // weights of spring, summer, autumn, winter
+// driven by signals (see signals.map)
+uniform vec4 flock[6];   // birds: x, y, how perched (0 flying outside, 1 on the sill), wing beat or head dip
+uniform int flockN;
+uniform float dust;      // 0..1 more dust in the light shaft
+uniform float frostSig;  // 0..1 frost on the glass, any season
+uniform float spinPh;    // extra turn of the suncatcher
 
 const float D_WIN = 0.55;
 const float D_PLANT = 1.05;
@@ -156,7 +162,7 @@ float catT(vec2 l){
 const vec2 PRISM_PIVOT = vec2(-0.14, 0.535);
 const float PRISM_LEN = 0.3;
 float prismSwing(){ return 0.045*sin(time*0.57) + 0.02*sin(time*1.31 + 1.0) + gust*0.22*sin(time*2.4); }
-float prismSpin(){ return time*0.09 + 0.9*sin(time*0.05) + gust*1.4*sin(time*1.3); }
+float prismSpin(){ return spinPh + time*0.09 + 0.9*sin(time*0.05) + gust*1.4*sin(time*1.3); }
 vec2 prismAt(){ float a = prismSwing(); return PRISM_PIVOT + PRISM_LEN*vec2(sin(a), -cos(a)); }
 // light through the hanging crystal and its thread, window coords: glass bends most light away, the facet
 // edges are dark, and a bright knot sits where it focuses
@@ -190,16 +196,16 @@ vec3 spectral(float x){                 // 0 violet .. 1 red
 
 // winter glass: frost creeping in from the frame, snow banked on the sill outside
 vec3 winterT(vec2 l){
-  float w = season.w;
-  if (w <= 0.0) return vec3(1.0);
+  float w = season.w, fw = max(w, frostSig);
+  if (fw <= 0.0) return vec3(1.0);
   vec2 dd = abs(l) - WH;
   float e = -(length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0));
-  float grow = 0.035 + 0.1*w + 0.05*(fbm(l*9.0) - 0.5);
+  float grow = 0.035 + 0.1*w + 0.2*frostSig + 0.05*(fbm(l*9.0) - 0.5);
   float frost = smoothstep(grow, grow*0.35, e);
   float fern = smoothstep(0.42, 0.75, fbm(l*34.0 + 3.0*vec2(fbm(l*7.0), fbm(l*7.0 + 4.1))));
-  float T = mix(1.0, 0.42 + 0.45*fern, frost*w);
+  float T = mix(1.0, 0.42 + 0.45*fern, frost*fw);
   float top = -WH.y + w*(0.035 + 0.025*noise(vec2(l.x*7.0, 1.0)) + 0.01*noise(vec2(l.x*31.0, 3.0)));
-  float snow = smoothstep(0.003, -0.003, l.y - top);
+  float snow = smoothstep(0.003, -0.003, l.y - top)*step(0.001, w);
   return vec3(T*mix(1.0, 0.1, snow))*vec3(1.0, 1.0, 1.0 + 0.04*frost*w);
 }
 
@@ -222,6 +228,35 @@ float birdsT(vec2 qb, float pen){
     float flap = mix(0.5*sin(time*13.0 + fi*1.9), -0.15, step(0.6, fract(passing.y*2.0 + fi*0.3)));
     float d = birdSD(vec2((qb.x - WC.x - x)*passing.w, qb.y - y)/s, flap)*s;
     T *= 1.0 - 0.88*(1.0 - smoothstep(-pen, pen, d));
+  }
+  return T;
+}
+
+// a small bird sitting on the sill, side on and facing +x; dip 0 head up .. 1 pecking down at the glass
+float perchSD(vec2 p, float dip){
+  float d = sdEll(p - vec2(0.0, 0.03), vec2(0.034, 0.021));
+  vec2 hc = vec2(0.027, 0.05) + dip*vec2(0.014, -0.028);
+  d = min(d, length(p - hc) - 0.014);
+  d = min(d, sdTri(p, hc + vec2(0.008, 0.006), hc + vec2(0.008, -0.006), hc + vec2(0.024 + 0.004*dip, -0.002 - 0.01*dip)));
+  d = min(d, sdTri(p, vec2(-0.024, 0.038), vec2(-0.02, 0.02), vec2(-0.064, 0.022)));
+  d = min(d, sdCap(p, vec2(-0.004, 0.012), vec2(-0.007, 0.0), 0.0025));
+  d = min(d, sdCap(p, vec2(0.007, 0.012), vec2(0.009, 0.0), 0.0025));
+  return d;
+}
+// birds driven by signals: circling in the plane outside (qb), or perched on the sill at the glass (l)
+float flockT(vec2 l, vec2 qb, float penW, float penB){
+  float T = 1.0;
+  for (int i = 0; i < 6; i++) {
+    if (i >= flockN) break;
+    vec4 b = flock[i];
+    float face = (i % 2 == 0) ? 1.0 : -1.0;
+    vec2 p = mix(qb - WC - b.xy, l - vec2(b.x, -WH.y + b.y), b.z);
+    float pen = mix(penB, penW, b.z);
+    if (dot(p, p) > pow(0.13 + 2.0*pen, 2.0)) continue;   // nowhere near this bird
+    p.x *= face;
+    float sF = 0.085 - 0.008*float(i % 3), sP = 1.45;
+    float d = mix(birdSD(p/sF, b.w)*sF, perchSD(p/sP, b.w)*sP, smoothstep(0.55, 0.9, b.z));
+    T *= 1.0 - 0.9*(1.0 - smoothstep(-pen, pen, d));
   }
   return T;
 }

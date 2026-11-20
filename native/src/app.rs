@@ -3,6 +3,7 @@
 use crate::gfx::{Frame, Renderer, SceneTex};
 use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, MOODS, PLANTS, STYLES};
 pub const SEASONS: [&str; 5] = ["spring", "summer", "autumn", "winter", "auto"];
+use crate::signals::Signals;
 use crate::sun;
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,8 @@ pub struct Opts {
     pub cat_secs: Option<f64>, pub pool: &'static str, pub breeze: bool, pub ui_port: Option<u16>,
     /// a fixed season (index into SEASONS), or None to follow the date
     pub season: Option<usize>, pub pass_secs: Option<f64>,
+    /// the folder signal files land in (None = signals off) and the map from signals to behaviours
+    pub signals: Option<String>, pub signal_map: String,
 }
 
 #[derive(Clone, Copy)]
@@ -135,6 +138,8 @@ pub struct App {
     passing: Option<Passing>, next_pass: Instant,
     /// a clock jump waiting for the cloud to cover it
     jump: Option<f64>,
+    pub sig: Signals,
+    spin: f64, last_t: Instant,
 }
 
 pub fn now_ms() -> f64 {
@@ -166,7 +171,8 @@ impl App {
             cur: r.scene_tex(), c_from: c, c_to: c, c_k: Tween::still(1.0), cloud: None,
             fade: Tween::still(1.0), warp_min: Tween::still(0.0), asleep: false,
             rng: Rng::seeded(), last_shuffle: now, lapse: None,
-            gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, jump: None, o,
+            gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, jump: None,
+            sig: Signals::new(o.signals.clone(), o.signal_map.clone()), spin: 0.0, last_t: now, o,
         };
         // the first cat comes along a minute or three in, then about every --cat
         a.next_cat = now + Duration::from_secs_f64(60.0 + a.rng.f() * 120.0);
@@ -219,17 +225,21 @@ impl App {
         let c = self.cont(now);
         let (alt, az) = sun::position(self.sim_ms(now), self.o.lat, self.o.lon);
         let anim = (self.o.anim + secs(now, self.start)) % 86_400.0;
-        let lk = self.light_k(now);
+        let s = &self.sig;
+        let lk = self.light_k(now) * (1.0 - 0.75 * s.amount("shade"));
+        let rain = c.rain.max(s.amount("rain")) * (c.rain.max(s.amount("rain")) > 0.02) as i32 as f64;
         let mut mood = c.mood;
         // rain and a passing cloud both soften the light
-        mood.haze = (mood.haze + 0.12 * c.rain as f32 + 0.6 * (1.0 - lk as f32)).min(1.0);
+        mood.haze = (mood.haze + 0.12 * rain as f32 + 0.6 * (1.0 - lk as f32) + 0.55 * s.amount("haze") as f32).min(1.0);
+        let (flock, flock_n) = s.birds(now, anim);
         let l = &self.drawn;
         Frame {
             time: anim as f32, style: l.style as i32, plant: l.plant as i32, caustic: l.caustic as i32,
             tilt: c.tilt.to_radians() as f32, sun: sun::room_vec(alt, az, c.facing), sun_alt: alt as f32,
             mood, fade: (self.fade.at(now) * self.lapse.map_or(1.0, |l| l.edge(now))) as f32,
-            rain: c.rain as f32, gust: self.gust(now) as f32, cat: self.cat_vec(now), light_k: lk as f32,
-            prism: c.prism as f32, passing: self.passing.and_then(|p| p.at(now)).unwrap_or([0.0; 4]), season: self.season(now),
+            rain: rain as f32, gust: self.gust(now).max(0.75 * s.amount("wind")) as f32, cat: self.cat_vec(now), light_k: lk as f32,
+            prism: c.prism.max((s.amount("suncatcher") * 5.0).min(1.0)) as f32, passing: self.passing.and_then(|p| p.at(now)).unwrap_or([0.0; 4]), season: self.season(now),
+            flock, flock_n, dust: s.amount("dust") as f32, frost: s.amount("frost") as f32, spin: self.spin as f32,
         }
     }
 
@@ -293,6 +303,19 @@ impl App {
                 self.next_cat = now + Duration::from_secs_f64(gap);
             }
         }
+        self.sig.update(now);
+        let dt = secs(now, self.last_t).min(0.5);
+        self.last_t = now;
+        self.spin += dt * 2.5 * self.sig.amount("suncatcher");
+        for p in std::mem::take(&mut self.sig.pulses) {
+            match p {
+                "wind" => { self.command(r, "gust 0.9"); }
+                "passing" if self.passing.is_none() => { self.send_past(now); }
+                "cat" if self.cat.is_none() => self.cat = Some(CatWalk::new(&mut self.rng, now)),
+                "suncatcher" => self.spin += 1.6,
+                _ => {}
+            }
+        }
         if let Some(p) = self.passing { if p.at(now).is_none() { self.passing = None; } }
         if let Some(every) = self.o.pass_secs {
             if self.passing.is_none() && self.cat.is_none() && now >= self.next_pass {
@@ -337,6 +360,7 @@ impl App {
             "season": SEASONS[self.o.season.unwrap_or(4)], "season_now": SEASONS[self.season(now).iter().enumerate().fold(0, |b, (i, x)| if *x > self.season(now)[b] { i } else { b })],
             "kept": favs.iter().any(|f| Look::from_flags(f).map(|x| fav_key(&x)) == Some(key.clone())),
             "favs": favs,
+            "signals": self.sig.state(),
             "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "caustic": CAUSTICS, "season": SEASONS },
         }).to_string()
     }
@@ -476,6 +500,23 @@ impl App {
                     (_, Some(false)) => "birds fly past".into(),
                 }
             }
+            // play a source: `signal NAME 0.4|busy|waiting|done|alert|quiet|clear [ttl]`; `signals` lists them
+            "signal" => {
+                let Some(dir) = self.sig.dir.clone() else { return "signals are off (--signals DIR turns them on)".into() };
+                let (Some(name), Some(v)) = (rest.first(), rest.get(1)) else { return "signal wants NAME VALUE [ttl], value a level 0..1 or busy, waiting, done, alert, quiet or clear".into() };
+                match crate::signals::write(&dir, name, v, rest.get(2).and_then(|t| t.parse().ok())) {
+                    Ok(m) => { let b = self.sig.behaviours_of(name); if b.is_empty() { format!("{m} (nothing in the map uses it)") } else { format!("{m} -> {}", b.join(", ")) } }
+                    Err(e) => format!("error: {e}"),
+                }
+            }
+            "signals" => {
+                let s = &self.sig;
+                if s.dir.is_none() { return "signals are off".into(); }
+                let mut out: Vec<String> = s.live.iter().map(|x| format!("{} {} {:.2} -> {}", x.name, x.state.name(), x.level, s.behaviours_of(&x.name).join(","))).collect();
+                if out.is_empty() { out.push(format!("no live signals in {}", s.dir.as_deref().unwrap_or(""))); }
+                out.extend(s.map_errs.iter().cloned());
+                out.join(" | ")
+            }
             "keep" => {
                 let mut favs = load_favs();
                 let key = fav_key(&self.look);
@@ -524,7 +565,7 @@ impl App {
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/style/plant/caustic/tilt/facing/rain/prism/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | now | sleep | wake | get | state".into(),
+                  | mood/style/plant/caustic/tilt/facing/rain/prism/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
         }
     }
 }

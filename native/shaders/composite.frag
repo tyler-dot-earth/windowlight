@@ -88,6 +88,7 @@ void main(){
     if (caustic >= 2) trans *= carafe(q - WC, pen);
     trans *= prismT(q - WC, pen);
     if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
+    if (flockN > 0) trans *= flockT(q - WC, planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), pen, (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
     if (season.x + season.z > 0.02) trans *= fallT(planeQ(p, pcw, n, ua, L, ns, 0.85, 0.4), (0.003 + 0.004*(0.85 - D_WIN)/ns)*hz);
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
     float strength = E*smoothstep(0.0, 0.08, alt)*lightK;
@@ -149,14 +150,14 @@ void main(){
         vec2 g = uv*sc + vec2(time*0.04 + fk*3.1 + 0.5*sin(time*0.09 + fk), -time*0.025*(1.0 + 0.3*fk));
         vec2 id = floor(g);
         float h = hash(id + fk*17.0);
-        if (h > 0.968) {
+        if (h > 0.968 - 0.06*dust) {
           vec2 cc = vec2(hash(id + 1.7), hash(id + 4.3))*0.7 + 0.15 + 0.12*vec2(sin(time*0.5 + h*30.0), cos(time*0.43 + h*21.0));
           float r = length(fract(g) - cc)/sc;
           float sz = spx*(1.0 + 1.8*hash(id + 8.8));
           specks += dot(a, vec3(0.3333))*smoothstep(sz, 0.0, r)*(0.35 + 0.65*max(sin(time*1.3 + h*50.0), 0.0))/(1.0 + sz/spx*0.6);
         }
       }
-      col += lc*strength*(beam*(0.035/6.0) + specks*0.5)*(1.0 - 0.7*haze);
+      col += lc*strength*(beam*(0.035/6.0)*(1.0 + 0.8*dust) + specks*0.5)*(1.0 - 0.7*haze);
     }
     if (isSun && pool) {
       vec3 Lr = vec3(L.x, -L.y, L.z);

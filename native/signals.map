@@ -1,0 +1,27 @@
+# windowlight signal map: which behaviour of the window each signal drives.
+#
+#   signal-pattern   behaviour   [from..to]
+#
+# A pattern is a signal name, with * matching anything. A signal can appear on several lines, and several
+# signals can drive one behaviour (the strongest wins). from..to stretches part of a signal's level over the
+# whole behaviour: `disk frost 0.8..1` frosts the glass only once the disk is past 80% full.
+#
+# Behaviours, each driven by a signal's level (0..1) and reacting when it turns done or alert:
+#   birds       one bird per signal: circles outside while busy, pecks at the glass while waiting,
+#               sits on the sill when done, flies off on alert or when it goes quiet
+#   wind        the plant and curtain sway harder; a gust on done or alert
+#   dust        more dust drifting in the light shaft
+#   frost       frost creeps in from the frame, any season
+#   haze        the light softens and spreads
+#   rain        drops on the glass
+#   shade       a cloud dims the sun
+#   suncatcher  the crystal hangs in the window and turns faster; a spin on done or alert
+#   passing     birds (by day) or headlights (by night) go past on done, alert, or a jump past 75%
+#   cat         the cat walks along the sill on done, alert, or a jump past 75%
+#
+# The default adapters (adapters/herdr and adapters/system) write the signals below.
+
+herdr-*   birds
+cpu       wind
+net       dust
+disk      frost   0.8..1
