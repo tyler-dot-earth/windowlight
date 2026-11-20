@@ -316,6 +316,13 @@ pub fn parse_secs(v: &str) -> Option<Option<f64>> {
 }
 
 impl App {
+    /// a window can lean either way; when the chosen way turns it nearly edge-on to the light, lean the other way
+    fn lean_into_light(&self, l: &mut Look, now: Instant) {
+        let ms = self.jump.unwrap_or_else(|| self.lapse.map(|t| t.middle()).unwrap_or_else(|| self.sim_ms(now)));
+        let sq = |t: f64| sun::squareness(ms, self.o.lat, self.o.lon, l.facing, t);
+        if sq(l.tilt) < 0.55 && sq(-l.tilt) > sq(l.tilt) { l.tilt = -l.tilt; }
+    }
+
     /// aim the window at the light for a shuffle; in the dark, jump to a sunny moment first
     fn aim(&mut self, now: Instant) -> f64 {
         let (lat, lon) = (self.o.lat, self.o.lon);
@@ -341,7 +348,8 @@ impl App {
             "random" => {
                 self.last_shuffle = now;
                 let facing = if arg == "all" { Some(self.aim(now)) } else { None };
-                let next = self.pick(facing);
+                let mut next = self.pick(facing);
+                self.lean_into_light(&mut next, now);
                 self.set_look(next, now);
                 self.look.flags()
             }

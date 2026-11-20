@@ -81,7 +81,7 @@ impl Look {
         let plant = if rng.f() < 0.12 { 0 } else { 1 + rng.below(4) };
         Look {
             style: rng.below(STYLES.len()), plant, mood: rng.below(MOODS.len()), caustic,
-            tilt: (12.0 + rng.f() * 50.0).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15,
+            tilt: ((12.0 + rng.f() * 50.0) * if rng.f() < 0.5 { -1.0 } else { 1.0 }).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15,
         }
     }
     /// a look from flags like the ones flags() prints; unknown flags are ignored

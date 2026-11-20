@@ -151,6 +151,8 @@ fn main() {
                     o.anim = rng.f() * 600.0;
                     let f = sunny_facing(&mut rng, ms, &o);
                     o.look = Look::random(&mut rng, Some(f), &o.look);
+                    let sq = |t: f64| sun::squareness(ms, o.lat, o.lon, f.round(), t);
+                    if sq(o.look.tilt) < 0.55 && sq(-o.look.tilt) > sq(o.look.tilt) { o.look.tilt = -o.look.tilt; }
                     let mut a = App::new(o.clone(), r);
                     a.render(r, Some(c.fb), size.0, size.1);
                     let name = format!("{dir}/{:02}.png", i + 1);
