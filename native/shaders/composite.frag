@@ -205,6 +205,7 @@ vec3 gLc = vec3(0.0); float gStr = 0.0; vec3 gTSh = vec3(1.0);
 // the light that reaches point P in the room from the window: the opening, the plant's leaves, the tree
 vec3 sunAt(vec3 P, vec3 n, vec3 ua, vec3 L, float ns, vec3 pcw, float hz){
   float tw = (D_WIN - dot(n, P))/ns;
+  if (tw < 0.0) return vec3(0.0);   // past the window: the window wall itself is in the way
   vec3 H = P + tw*L;
   vec3 a = softAp(vec2(dot(ua, H), H.y), (0.004 + 0.004*tw)*hz);
   if (plantType > 0) {
@@ -399,6 +400,81 @@ vec3 shelfLook(vec3 E, vec3 Dd, vec3 bg, vec3 amb, vec3 lampI, vec3 L, vec3 n, v
       obj = c;
     }
     return obj;
+}
+
+// a room corner: a side wall at x = XC comes toward us on the left, with a skirting board along its foot and
+// the main wall's, and the floor below. Morning light that reaches the corner folds onto the side wall
+const float XC = -0.6, FY = -0.06, SK_H = 0.07, SK_D = 0.012;
+vec3 cornerLook(vec3 E, vec3 Dd, vec3 bg, vec3 amb, vec3 lampI, vec3 L, vec3 n, vec3 ua, float ns, vec3 pcw, float hz, out float hit){
+  hit = 0.0;
+  float tS = Dd.x < 0.0 ? (XC - E.x)/Dd.x : 9.0;           // side wall
+  float tF = Dd.y < 0.0 ? (FY - E.y)/Dd.y : 9.0;           // floor
+  // skirting: a slab along each wall's foot
+  float tK = 9.0; vec3 NK = vec3(0.0);
+  {
+    float t = (SK_D - E.z)/Dd.z; vec3 P = E + t*Dd;        // its face along the main wall
+    if (t > 0.0 && P.y > FY && P.y < FY + SK_H && P.x > XC) { tK = t; NK = vec3(0.0, 0.0, 1.0); }
+    t = (XC + SK_D - E.x)/Dd.x; P = E + t*Dd;              // its face along the side wall
+    if (Dd.x < 0.0 && t > 0.0 && t < tK && P.y > FY && P.y < FY + SK_H && P.z > SK_D) { tK = t; NK = vec3(1.0, 0.0, 0.0); }
+    t = Dd.y < 0.0 ? (FY + SK_H - E.y)/Dd.y : 9.0; P = E + t*Dd;   // its top
+    if (t > 0.0 && t < tK && P.x > XC && (P.z < SK_D || P.x < XC + SK_D)) { tK = t; NK = vec3(0.0, 1.0, 0.0); }
+  }
+  float t = min(min(tS, tF), tK);
+  if (t >= 1.0) return bg;
+  hit = 1.0;
+  vec3 P = E + t*Dd;
+  vec3 N = t == tK ? NK : t == tS ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+  vec3 sunC = gLc*gStr, V = -normalize(Dd);
+  float cs = dot(N, L);
+  vec3 s = (gStr > 0.0 && cs > 0.0) ? sunAt(P, n, ua, L, ns, pcw, hz) : vec3(0.0);
+  float lit = smoothstep(0.0, 0.1, cs)*(0.4 + 0.6*cs);
+  // shade where the surfaces meet
+  float ao = 1.0 - 0.3*exp(-(P.x - XC)/0.06)*(1.0 - N.x) - 0.25*exp(-(P.y - FY)/0.05)*(1.0 - N.y) - 0.25*exp(-P.z/0.06)*(1.0 - N.z);
+  ao *= 1.0 - 0.25*exp(-max(min(P.x - XC, P.z), 0.0)/0.03)*N.y;
+  vec3 c;
+  if (t == tK) {
+    // painted board, satin: a soft gloss where the sun crosses it
+    vec3 paint = pow(vec3(0.94, 0.9, 0.83), vec3(2.2));
+    c = paint*(amb*(N.y > 0.5 ? 1.1 : 0.85) + lampI*0.7 + sunC*s*lit)*ao;
+    c += sunC*s*pow(max(dot(N, normalize(L + V)), 0.0), 40.0)*0.15;
+    c *= 1.0 - 0.35*smoothstep(0.0025, 0.0, abs(P.y - (FY + SK_H)))*(1.0 - N.y);
+  } else if (t == tS) {
+    vec2 pq = vec2(P.z, P.y);
+    vec3 w = pow(wallA, vec3(2.2))*(1.0 + mottle*(fbm(pq*2.2 + 9.0) - 0.5)*2.4);
+    float tex = texture(uPlaster, pq/TILE).r;
+    w *= 0.97 + 0.06*tex;
+    // and the patch on the main wall throws a little of its warmth back across the corner
+    vec3 b = vec3(0.0);
+    if (gStr > 0.0) for (int i = 0; i < 6; i++) {
+      float d = (i & 1) == 0 ? 0.06 : 0.2;
+      vec3 Pw = vec3(XC + d, P.y + 0.15*float(i/2 - 1), 0.0);
+      b += sunAt(Pw, n, ua, L, ns, pcw, hz*12.0)*max(L.z, 0.0)*d/(d*d + P.z*P.z)*0.3;
+    }
+    c = w*(amb*0.9 + lampI*0.8 + sunC*s*lit + pow(wallA, vec3(2.2))*sunC*b*0.08)*ao;
+    // the shelf mirror's spot, when it lands past the corner
+    if (shelf > 0.01 && gStr > 0.0) { vec3 o; vec3 ms = mirrorSpot(P, L, hz, n, ua, ns, pcw, o); c += w*sunC*ms*0.85*max(-o.x, 0.0)*shelf; }
+  } else {
+    // oak boards running out from the wall, satin, the sunlit wall caught softly in them
+    float bx = P.x/0.11, id = floor(bx), seam = smoothstep(0.47, 0.492, abs(fract(bx) - 0.5));
+    float jn = floor(P.z/0.9 + hash(vec2(id, 1.0)));
+    vec2 gq = vec2(P.x*40.0, P.z*2.0 + id*3.7 + jn*1.3);
+    float g = fbm(gq + vec2(1.5*fbm(gq*vec2(0.15, 2.5)), 0.0));
+    vec3 wood = mix(vec3(0.46, 0.3, 0.17), vec3(0.32, 0.19, 0.1), smoothstep(0.3, 0.8, g))*(0.85 + 0.3*hash(vec2(id, jn)));
+    wood *= 1.0 - 0.5*seam;
+    c = wood*(amb*1.05 + lampI*0.8 + sunC*s*lit)*ao;
+    vec3 R = reflect(-V, N);
+    if (R.z < -0.01) {
+      vec3 Q = P - P.z/R.z*R;
+      if (Q.x > XC) {
+        // satin: the reflection blurs the further it travels
+        float dr = -P.z/R.z, fres = 0.03 + 0.25*pow(1.0 - max(dot(N, V), 0.0), 5.0), bl = 0.006 + 0.25*dr;
+        vec3 qs = gStr > 0.0 ? sunAt(Q, n, ua, L, ns, pcw, hz*3.0 + 40.0*dr) : vec3(0.0);
+        vec3 alb = mix(pow(vec3(0.94, 0.9, 0.83), vec3(2.2)), pow(wallA, vec3(2.2)), smoothstep(-bl, bl, Q.y - FY - SK_H));
+        c += alb*(amb + sunC*qs*(0.4 + 0.6*L.z))*fres*(1.0 - 0.6*seam);
+      }
+    }
+  }
+  return c;
 }
 
 // a flame's flicker, 0..1: a fast flutter on a slower breath. t wraps so the noise keeps its precision
@@ -833,6 +909,19 @@ void main(){
 
   // the shelf and what stands on it, seen from where we stand: each lit by the room, by any lamp
   // (judged from what it adds to the wall behind), and by the sun through the window
+  // the corner, the skirting and the floor: the side wall and the floor only show left of the corner line
+  // and below the skirting's top. Four rays a pixel on the boards and along the edges, one on the plain wall
+  if (corner > 0.01 && (uv.x < XC + 2.0*ph || uv.y < FY + SK_H + 2.0*ph)) {
+    float hz = 1.0 + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
+    vec3 lampI = max(col - colSun, 0.0)/max(wall, vec3(0.05));
+    vec3 acc = vec3(0.0); float h;
+    int nk = (abs(uv.x - XC) < 3.0*ph || uv.y < FY + SK_H + 3.0*ph) ? 4 : 1;
+    for (int k = 0; k < nk; k++) {
+      vec2 o = nk == 1 ? vec2(0.0) : vec2(k & 1, k >> 1)*0.5 - 0.25 + vec2(0.125, -0.125)*vec2((k >> 1) == 0 ? 1.0 : -1.0, (k & 1) == 0 ? 1.0 : -1.0);
+      acc += cornerLook(eye, vec3(uv + o*ph, 0.0) - eye, col, amb, lampI, L, n, ua, ns, pcw, hz, h);
+    }
+    col = mix(col, acc/float(nk), corner);
+  }
   // the shelf, four rays a pixel near it so its edges stay clean
   if (shelf > 0.01 && uv.x > SH_X.x - 0.12 && uv.x < SH_X.y + 0.12 && uv.y > SH_Y.x - 0.08 && uv.y < MI_C.y + MI_R + 0.06) {
     float hz = 1.0 + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
