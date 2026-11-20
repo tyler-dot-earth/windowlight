@@ -28,7 +28,7 @@ pub struct Frame {
     pub time: f32, pub style: i32, pub plant: i32, pub tree: i32, pub caustic: i32, pub material: i32, pub tilt: f32,
     pub sun: [f32; 3], pub sun_alt: f32, pub evening: f32, pub mood: Mood, pub fade: f32,
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
-    pub prism: f32, pub life: f32, pub shelf: f32, pub corner: f32, pub switch: f32, pub hook: f32, pub passing: [f32; 4], pub season: [f32; 4],
+    pub prism: f32, pub life: f32, pub shelf: f32, pub corner: f32, pub switch: f32, pub hook: f32, pub pinhole: f32, pub passing: [f32; 4], pub season: [f32; 4],
     /// from signals: birds (x, y, perched, beat) and how many, dust, frost, extra suncatcher turn
     pub flock: [[f32; 4]; 6], pub flock_n: i32,
     /// a light of its own (index into LAMPS) and how far on it is
@@ -169,6 +169,7 @@ impl Renderer {
         gl.uniform_1_f32(u("corner").as_ref(), f.corner);
         gl.uniform_1_f32(u("wswitch").as_ref(), f.switch);
         gl.uniform_1_f32(u("whook").as_ref(), f.hook);
+        gl.uniform_1_f32(u("obscura").as_ref(), f.pinhole);
         gl.uniform_4_f32_slice(u("passing").as_ref(), &f.passing);
         gl.uniform_4_f32_slice(u("season").as_ref(), &f.season);
         gl.uniform_4_f32_slice(u("flock").as_ref(), f.flock.as_flattened());
@@ -254,7 +255,7 @@ impl Renderer {
                        ("contrast", m.contrast), ("ambAmt", m.amb), ("fade", f.fade), ("lightK", f.light_k)] {
             gl.uniform_1_f32(u(n).as_ref(), v);
         }
-        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus), ("uFade", &s.fade), ("uDap", &s.dap)].iter().enumerate() {
+        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus), ("uFade", &s.fade), ("uDap", &s.dap), ("uTree", &s.tree)].iter().enumerate() {
             gl.active_texture(glow::TEXTURE0 + i as u32);
             gl.bind_texture(glow::TEXTURE_2D, Some(t.tex));
             gl.uniform_1_i32(u(n).as_ref(), i as i32);

@@ -1,7 +1,7 @@
 // every frame, full resolution: wall, light and grading, reading the baked textures
 in vec2 vUv; out vec4 fragColor;
 uniform vec2 res;
-uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus, uFade, uDap;
+uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus, uFade, uDap, uTree;
 uniform vec2 apTexel, folTexel;   // texels per unit
 uniform vec3 wallA, sunTint, shadeTint, nightTint;
 uniform float mottle, bumpAmt, expo, sat, contrast, ambAmt, fade, lightK;
@@ -479,6 +479,104 @@ vec3 cornerLook(vec3 E, vec3 Dd, vec3 bg, vec3 amb, vec3 lampI, vec3 L, vec3 n, 
 }
 
 // a flame's flicker, 0..1: a fast flutter on a slower breath. t wraps so the noise keeps its precision
+// a camera obscura: a blackout blind over the window with one small hole in it. Every point of the wall sees
+// the outdoors through that hole, so the whole view lands on the wall upside down and mirrored: the sky at
+// the bottom, the street hanging from the horizon line, the tree upside down. The hole is a couple of
+// centimetres across, so the picture is as soft as the hole is wide; it dims toward its edges (the hole is
+// seen aslant and from farther off, about cos^4); and the sun comes through as a blown-out blob
+const vec2 PH_Q = vec2(0.15, 0.6); const float PH_R = 0.011;
+// a house front by the street: its eaves height over the street (metres-ish), and a gable on about half of them
+float roofAt(float i, float fa){ return 3.5 + 3.0*floor(hash(vec2(i, 3.0))*3.0) + hash(vec2(i, 5.0)) + step(0.5, hash(vec2(i, 11.0)))*2.4*(1.0 - abs(fa*2.0 - 1.0)); }
+vec3 obscuraAt(vec3 P, vec3 nb, vec3 n, vec3 ua, float dayK){
+  vec3 H = PH_Q.x*ua + vec3(0.0, PH_Q.y, 0.0) + D_WIN*n;
+  vec3 v = H - P; float r = length(v); vec3 d = v/r;
+  float bl = PH_R/r;                                   // the blur, as an angle
+  bool up = sunAlt > 0.0;
+  vec3 S = sun, lc = sunColor(max(sunAlt, 0.0))*sunTint;
+  float sl = up ? sunLevel(sunAlt) : 0.0;
+  float gold = smoothstep(0.3, 0.0, sunAlt);
+  float twi = exp(-pow((sunAlt + 0.05)/0.075, 2.0));
+  float e = d.y, mu = dot(d, S);
+  vec2 dh = normalize(d.xz + 1e-5), sh = normalize(S.xz + 1e-5);
+  float toward = max(dot(dh, sh), 0.0);
+  // the sky: deep overhead, pale at the horizon, warm where the sun is low, a glow round the sun itself
+  vec3 c = mix(vec3(0.42, 0.52, 0.66), vec3(0.08, 0.19, 0.5), pow(clamp(e, 0.0, 1.0), 0.6));
+  c = mix(c, lc*vec3(1.0, 0.7, 0.55), gold*exp(-max(e, 0.0)*5.0)*(0.25 + 0.75*toward*toward));
+  c += lc*(0.12*pow(max(mu, 0.0), 5.0) + 0.5*pow(max(mu, 0.0), 60.0))*(1.0 + 1.5*haze);
+  c = mix(c, vec3(dot(c, vec3(0.3333))), 0.55*haze)*dayK;
+  vec3 tw = mix(vec3(0.5, 0.3, 0.32)*(0.35 + 0.65*toward*exp(-max(e, 0.0)*4.0)), vec3(0.1, 0.15, 0.38), smoothstep(-0.03, -0.1, sunAlt));
+  c += twi*tw*0.6 + mix(vec3(0.004, 0.006, 0.014), vec3(0.03, 0.02, 0.012), exp(-max(e, 0.0)*8.0));   // at night the town's glow low on the sky
+  // clouds on a flat deck overhead, drifting, lit gold and rose from below when the sun is low
+  float cl = 0.0;
+  if (e > 0.0) {
+    vec2 cp = d.xz/(e + 0.08)*0.5 + vec2(time*0.004, time*0.0015);
+    float cn = fbm(cp*1.3), cov = 0.28 + 0.45*haze;
+    cl = smoothstep(0.72 - cov, 1.02 - cov, cn)*smoothstep(0.0, 0.08, e);
+    vec3 cc = mix(vec3(0.85, 0.86, 0.88), lc*vec3(1.05, 0.78, 0.74), gold*0.8)*(0.6 + 0.7*pow(max(mu, 0.0), 3.0))*mix(1.0, 0.72, smoothstep(0.55, 0.85, cn));
+    c = mix(c, cc*dayK + twi*vec3(0.55, 0.3, 0.36)*0.7 + vec3(0.008), cl*0.9);
+  }
+  // the sun, and at night the moon opposite it: a disc half a degree across, smeared to the size of the hole
+  float rs = 0.00465*(1.0 + 2.0*haze);
+  float ang = sqrt(max(2.0 - 2.0*abs(mu), 0.0));
+  float blob = smoothstep(rs + bl, max(rs - bl, 0.0), ang)*rs*rs/((rs + bl)*(rs + bl));
+  if (up && mu > 0.0) c += lc*sl*(blob*900.0 + 0.35*exp(-ang/(bl*2.5)))*(1.0 - 0.9*cl);
+  if (!up && mu < 0.0) c += vec3(0.75, 0.8, 0.9)*(blob*30.0 + 0.02*exp(-ang/(bl*2.5)))*smoothstep(0.0, 0.1, -sunAlt)*(1.0 - 0.9*cl);
+  // across the street, 24 m off, a row of houses and shops along it, their fronts lit when the sun is on our
+  // side; rows of windows that blur away, and at night a few of them lit. Hills low beyond them
+  c = mix(c, mix(vec3(0.25, 0.3, 0.38)*dayK + twi*0.08, c, 0.55 + 0.3*haze), smoothstep(0.012 + bl, 0.012 - bl, e + 0.006*(noise(vec2(atan(d.x, d.z)*6.0, 1.0)) - 0.5)));
+  float tf = 20.0/max(d.z, 0.05);                      // out to the fronts, along d
+  vec2 fp = vec2(tf*d.x, PH_Q.y + 0.9 + tf*d.y);       // across, and height over the street
+  float bb = bl*tf;                                    // the blur there
+  float ia = floor(fp.x/7.0), fa = fract(fp.x/7.0);
+  float rh = mix(roofAt(ia, fa), roofAt(ia + 1.0, 0.0), smoothstep(1.0 - min(bb/7.0, 0.5), 1.0, fa));
+  float bld = smoothstep(rh + bb, rh - bb, fp.y)*step(0.0, fp.y + 2.0);
+  vec3 alb = mix(vec3(0.4, 0.36, 0.33), vec3(0.72, 0.64, 0.55), hash(vec2(ia, 7.0)));
+  vec2 wg = vec2(fp.x*0.45, fp.y*0.36);
+  float wk = 1.0 - smoothstep(0.15, 0.5, bb*0.45);
+  float ww = clamp(bb*0.45, 0.03, 0.5);
+  vec2 wf = abs(fract(wg) - vec2(0.72, 0.75));
+  float wn = mix(0.25, smoothstep(0.22 + ww, 0.22 - ww, wf.x)*smoothstep(0.2 + ww, 0.2 - ww, wf.y)*step(1.0, fp.y), wk);
+  vec3 fac = alb*(lc*max(-S.z, 0.0)*sl*1.1 + vec3(0.35, 0.4, 0.48)*dayK*0.6 + twi*0.12)*(1.0 - 0.35*wn*dayK);
+  fac += vec3(1.0, 0.68, 0.32)*1.2*wn*mix(0.2, step(0.8, hash(floor(wg) + ia)), wk)*(1.0 - dayK);
+  fac = mix(fac, c, 0.2 + 0.4*haze);
+  c = mix(c, fac, bld);
+  // nearer, the ground: grass going amber in autumn, then the pavement and the street, sunlit from above
+  float gz = 1.52*d.z/max(-e, 1e-3);                   // how far out the ground is, metres-ish
+  float gnd = smoothstep(20.0 + bb, 20.0 - bb, gz)*step(e, 0.0);
+  vec2 gp = d.xz/max(-e, 1e-3)*1.52;
+  float bw = bl*gz*gz/1.52 + 0.05;                     // the blur, along the ground
+  vec3 grass = mix(vec3(0.09, 0.15, 0.05), vec3(0.2, 0.16, 0.08), min(season.z + 0.7*season.w, 1.0))*(1.0 + 0.5*(noise(gp*vec2(0.9, 0.35)) - 0.5)*(1.0 - smoothstep(0.1, 0.8, bw)));
+  float walk = smoothstep(9.0 - bw, 9.0 + bw, gz), road = smoothstep(11.0 - bw, 11.0 + bw, gz), far_ = smoothstep(18.0 - bw, 18.0 + bw, gz);
+  grass = mix(grass, vec3(0.42, 0.4, 0.37), walk);
+  grass = mix(grass, vec3(0.13, 0.13, 0.14)*(1.0 + 0.6*smoothstep(0.3, 0.05, abs(gz - 14.5))*step(0.5, fract(gp.x*0.25))*(1.0 - smoothstep(0.1, 0.6, bw))), road);
+  grass = mix(grass, vec3(0.42, 0.4, 0.37), far_);
+  vec3 gc = grass*(lc*max(S.y, 0.0)*sl*1.6 + vec3(0.3, 0.36, 0.45)*dayK*0.7 + twi*0.1 + 0.004);
+  c = mix(c, mix(gc, c, 0.15 + 0.3*haze), gnd);
+  // the tree, upside down in front of all that: dark against a bright sky, glowing where the sun is behind it
+  vec3 leafC = mix(mix(vec3(0.06, 0.1, 0.035), vec3(0.11, 0.16, 0.05), season.x), vec3(0.28, 0.13, 0.03), season.z*0.8);
+  leafC = mix(leafC, vec3(0.1, 0.08, 0.07), season.w*(treeType == 4 ? 0.0 : 1.0));
+  float dn = max(dot(n, d), 0.05);
+  if (treeType > 0) {
+    float tt = (D_TREE - dot(n, H))/dn;
+    vec3 T = H + tt*d;
+    vec2 tu = (vec2(dot(ua, T), T.y) - TREE_MIN)/TREE_SIZE;
+    float inT = step(0.0, tu.x)*step(tu.x, 1.0)*step(tu.y, 1.0)*smoothstep(-0.9 - bl*tt, -0.9 + bl*tt, T.y);   // down to the ground
+    float cov = textureLod(uTree, clamp(tu, 0.0, 1.0), log2(max(bl*tt/TREE_SIZE.x*1024.0, 1.0))).r*inT;
+    vec3 tc = leafC*(lc*sl*(0.35 + 1.5*max(-S.z, 0.0)) + vec3(0.3, 0.36, 0.45)*dayK*0.8 + twi*0.1) + lc*sl*leafTint()*0.5*pow(max(mu, 0.0), 4.0);
+    c = mix(c, tc, cov);
+  }
+  // the plant on the sill, so close to the hole that it's the softest thing in the picture
+  if (plantType > 0) {
+    float tp = (D_PLANT - dot(n, H))/dn;
+    vec3 Q = H + tp*d;
+    float occ = textureLod(uFol, folUV(vec2(dot(ua, Q), Q.y)), log2(max(PH_R*(1.0 + tp/r)*folTexel.x, 1.0))).r;
+    c = mix(c, leafC*(vec3(0.3, 0.36, 0.45)*dayK*0.6 + twi*0.08) + lc*sl*leafTint()*0.6*pow(max(mu, 0.0), 3.0), occ*0.95);
+  }
+  float fall = pow(max(dot(n, d), 0.0)*d.z*(H.z*H.z)/(r*r)/n.z, 0.45)*smoothstep(0.0, 0.45, dot(n, d));   // the hole seen edge-on lets nothing by
+  float bump = mix(1.0, clamp(dot(nb, d)/max(d.z, 0.05), 0.0, 3.0), 0.5);
+  return c*fall*bump;
+}
+
 float flick(float t, float s){
   return 0.5*noise(vec2(t*7.0, s)) + 0.3*noise(vec2(t*17.0, s + 7.0)) + 0.2*noise(vec2(t*1.9, s + 3.0));
 }
@@ -519,6 +617,7 @@ void main(){
   vec2 pcR = wc.xy - (wc.z/max(L.z, 0.12))*vec2(L.x, -L.y);
   vec2 aim = pool && isSun ? mix(pc, pcR, 0.5) : pc;
   vec2 shift = clamp(aim - vec2(0.0, 0.5), vec2(-0.6, -0.45), vec2(0.6, pool ? 0.9 : 0.45)) * 0.8 * smoothstep(0.0, 0.06, alt) * smoothstep(0.03, 0.12, ns);
+  shift = mix(shift, vec2(-0.05, -0.12), obscura);   // with the blind down, frame the picture with the horizon high
   uv += shift;
   // where we stand looking at the wall, for the glint off glazed or painted surfaces
   vec3 eye = vec3(shift + vec2(0.0, 0.5), 2.4);
@@ -576,6 +675,7 @@ void main(){
   float gold = smoothstep(0.21, 0.03, sunAlt)*step(0.0, sunAlt);
   amb *= mix(vec3(1.0), vec3(0.86, 0.94, 1.16), 0.6*gold);
   amb *= 0.72 + 0.5*smoothstep(-1.4, 1.2, uv.x);
+  amb *= mix(1.0, 0.1, obscura);   // the blind is down: only what comes through the pinhole lights the room
   vec3 col = wall*amb;
   // a drifting seed, seen against the wall in the room's own light
   vec3 seedS; vec2 seedC = vec2(0.0);
@@ -641,7 +741,7 @@ void main(){
     if (flockN > 0) trans *= flockT(q - WC, planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), pen, (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
     if (season.x + season.z > 0.02) trans *= fallT(planeQ(p, pcw, n, ua, L, ns, 0.85, 0.4), (0.003 + 0.004*(0.85 - D_WIN)/ns)*hz);
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
-    float strength = E*(isSun ? sunLevel(alt)*sunDisc(alt) : smoothstep(0.0, 0.08, alt))*lightK;
+    float strength = E*(isSun ? sunLevel(alt)*sunDisc(alt) : smoothstep(0.0, 0.08, alt))*lightK*(1.0 - obscura);
     vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
     gLc = lc; gStr = strength; gTSh = tShade;
     float flat_ = max(L.z, 0.0);
@@ -740,6 +840,7 @@ void main(){
     }
   }
 
+  if (obscura > 0.01) col += wall*obscuraAt(vec3(uv, 0.0), nb, n, ua, day)*obscura*0.9;
   vec3 colSun = col;
   // a light of its own. Neon: a two-tube sign across the street throws the window onto the wall twice, once
   // per colour. Grow lights hang over the plant and throw its shadow down the wall; each is a few emitters,

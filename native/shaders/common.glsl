@@ -19,6 +19,7 @@ uniform float life;      // 0..1 tiny life: a spider in the window corner, dande
 uniform float shelf;     // 0..1 a shelf with a glass of water and a little mirror
 uniform float corner;    // 0..1 a room corner on the left, with skirting and floor
 uniform float wswitch;   // 0..1 the light switch
+uniform float obscura;   // 0..1 a blackout blind with a pinhole: the room becomes a camera obscura
 uniform float whook;     // 0..1 the picture hook, the ghost of its frame and the old nail hole
 uniform float prism;     // 0..1 a crystal suncatcher hanging in the window
 uniform vec4 passing;    // something outside: x kind (1 birds, 2 car at night), y progress 0..1, z seed, w direction

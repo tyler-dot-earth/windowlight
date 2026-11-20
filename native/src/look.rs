@@ -56,10 +56,10 @@ impl Mood {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool, pub prism: bool, pub lamp: usize, pub material: usize, pub tree: usize, pub life: bool, pub shelf: bool, pub corner: bool, pub switch: bool, pub hook: bool }
+pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool, pub prism: bool, pub lamp: usize, pub material: usize, pub tree: usize, pub life: bool, pub shelf: bool, pub corner: bool, pub switch: bool, pub hook: bool, pub pinhole: bool }
 
 impl Default for Look {
-    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false, lamp: 0, material: 0, tree: 0, life: false, shelf: false, corner: false, switch: true, hook: true } }
+    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false, lamp: 0, material: 0, tree: 0, life: false, shelf: false, corner: false, switch: true, hook: true, pinhole: false } }
 }
 
 fn pick(list: &[&str], v: &str) -> Result<usize, String> {
@@ -86,14 +86,15 @@ impl Look {
             "corner" => self.corner = matches!(v, "on" | "1" | "true" | "yes"),
             "switch" => self.switch = matches!(v, "on" | "1" | "true" | "yes"),
             "hook" => self.hook = matches!(v, "on" | "1" | "true" | "yes"),
+            "pinhole" | "obscura" => self.pinhole = matches!(v, "on" | "1" | "true" | "yes"),
             _ => return Ok(false),
         }
         Ok(true)
     }
     pub fn flags(&self) -> String {
-        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {} --prism {} --lamp {} --material {} --tree {} --life {} --shelf {} --corner {} --switch {} --hook {}",
+        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {} --prism {} --lamp {} --material {} --tree {} --life {} --shelf {} --corner {} --switch {} --hook {} --pinhole {}",
             STYLES[self.style], PLANTS[self.plant], MOODS[self.mood], CAUSTICS[self.caustic], self.tilt, self.facing,
-            if self.rain { "on" } else { "off" }, if self.prism { "on" } else { "off" }, LAMPS[self.lamp], MATERIALS[self.material], TREES[self.tree], if self.life { "on" } else { "off" }, if self.shelf { "on" } else { "off" }, if self.corner { "on" } else { "off" }, if self.switch { "on" } else { "off" }, if self.hook { "on" } else { "off" })
+            if self.rain { "on" } else { "off" }, if self.prism { "on" } else { "off" }, LAMPS[self.lamp], MATERIALS[self.material], TREES[self.tree], if self.life { "on" } else { "off" }, if self.shelf { "on" } else { "off" }, if self.corner { "on" } else { "off" }, if self.switch { "on" } else { "off" }, if self.hook { "on" } else { "off" }, if self.pinhole { "on" } else { "off" })
     }
     /// a random look; facing stays unless `facing` is given
     pub fn random(rng: &mut Rng, facing: Option<f64>, base: &Look) -> Look {
@@ -110,6 +111,7 @@ impl Look {
             corner: rng.f() < 0.3,
             switch: rng.f() < 0.6,
             hook: rng.f() < 0.5,
+            pinhole: rng.f() < 0.08,
         }
     }
     /// a look from flags like the ones flags() prints; unknown flags are ignored
