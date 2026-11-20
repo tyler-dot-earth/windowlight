@@ -197,6 +197,21 @@ impl Renderer {
 
     pub unsafe fn drop_target(&self, t: Target) { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
 
+    /// a small picture of one window's shape (the light it lets through, in its glass colours) or, with
+    /// `plant`, one plant's silhouette: RGBA, see-through where it blocks or is empty
+    pub unsafe fn glyph(&self, f: &Frame, plant: bool, w: i32, h: i32) -> Vec<u8> {
+        let t = self.canvas(w, h);
+        self.pass(if plant { self.p_fol } else { self.p_ap }, &t, Some(f));
+        let rgb = self.read_rgb(&t);
+        self.drop_target(t);
+        rgb.chunks(3).flat_map(|p| {
+            if plant { return [255, 255, 255, p[0]]; }
+            let m = p[0].max(p[1]).max(p[2]);
+            let k = |c: u8| if m == 0 { 0 } else { (c as u32 * 255 / m as u32) as u8 };
+            [k(p[0]), k(p[1]), k(p[2]), m]
+        }).collect()
+    }
+
     pub unsafe fn read_rgb(&self, t: &Target) -> Vec<u8> {
         let gl = &self.gl;
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(t.fb));

@@ -1,6 +1,7 @@
 // What a scene looks like: window, plant, mood, caustics, geometry. Plus the mood palette and random picks.
-pub const STYLES: [&str; 20] = ["window", "blinds", "lattice", "georgian", "arch", "shutters", "sheer", "porthole", "stained", "slats", "jali",
-    "rose", "tracery", "palladian", "shoji", "moorish", "prairie", "moon", "persian", "nouveau"];
+pub const STYLES: [&str; 24] = ["window", "blinds", "lattice", "georgian", "arch", "shutters", "sheer", "porthole", "stained", "slats", "jali",
+    "rose", "tracery", "palladian", "shoji", "moorish", "prairie", "moon", "persian", "nouveau",
+    "mashrabiya", "girih", "sikri", "jharokha"];
 /// the historical windows start here in STYLES
 pub const HISTORIC: usize = 11;
 pub const PLANTS: [&str; 5] = ["none", "ficus", "monstera", "palm", "olive"];

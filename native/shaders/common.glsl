@@ -311,7 +311,7 @@ vec3 stained(vec2 l){
   return c*lead*(0.85 + 0.15*noise(l*40.0));
 }
 
-// ---------------- historical windows (styles 11..19): each returns rgb light colour and a = open
+// ---------------- historical windows (styles 11..23): each returns rgb light colour and a = open
 float archIn(vec2 p, float hw, float s, float k, float bot){   // jambs to s, then a round (k=0) to equilateral (k=1) head
   float R = hw*(1.0 + k);
   float head = step(length(vec2(abs(p.x) + R - hw, p.y - s)), R) * step(s, p.y);
@@ -489,7 +489,97 @@ vec4 nouveauW(vec2 l){
   return vec4(c, o*smoothstep(0.0035, 0.006, d));
 }
 
+// a cusped arch, the Mughal and Rajput opening: jambs up to s, then a head of lobes (with an even count the
+// springing lobes meet the jambs; odd leaves a cusp there), raised toward a point; depth is how far cusps bite
+float cusped(vec2 p, float hw, float s, float bot, float lobes, float depth){
+  float jambs = step(abs(p.x), hw)*step(bot, p.y)*step(p.y, s);
+  vec2 h = vec2(p.x, (p.y - s)/1.25);
+  return max(jambs, step(s, p.y)*step(length(h), hw*(1.0 - depth + depth*abs(cos(lobes*atan(h.x, h.y))))));
+}
+
+// Cairene mashrabiya (Ottoman era, 18th c.): a screen of turned wooden spindles with a bead between each pair
+// of joints, set closer below for privacy, and a little hatch left open at eye level
+float spindles(vec2 l, float p){   // 1 = wood
+  vec2 a = (fract(l/p + 0.5) - 0.5)*p, t = fract(l/p) - 0.5;   // a: across the nearest bars, t: along them
+  vec2 w = p*(0.07 + 0.2*exp(-t*t*36.0));                     // bars swell into a bead mid-way
+  float bars = max(step(abs(a.x), w.y), step(abs(a.y), w.x));
+  return max(bars, step(max(abs(a.x), abs(a.y)), p*0.17));    // a block at each joint
+}
+vec4 mashrabiyaW(vec2 l){
+  float o = inBox(l, vec2(0.44, 0.58));
+  float lower = step(l.y, -0.16);
+  float wood = spindles(l - vec2(0.0, 0.02), mix(0.088, 0.062, lower));
+  wood = max(wood, 1.0 - rail(l.y + 0.16, 0.014));
+  // the hatch: a small framed opening at eye level, its shutter slid aside
+  vec2 hp = l - vec2(0.0, 0.1);
+  float hatch = inBox(hp, vec2(0.085, 0.07));
+  wood = mix(wood, 0.0, hatch);
+  wood = max(wood, inBox(hp, vec2(0.1, 0.085))*(1.0 - hatch));
+  // a frieze of small pointed arches along the top
+  vec2 fp = vec2((fract(l.x/0.11) - 0.5)*0.11, l.y - 0.44);
+  float frieze = step(0.4, l.y);
+  wood = mix(wood, 1.0 - archIn(fp, 0.03, 0.02, 0.8, -0.03)*step(fp.y, 0.13), frieze);
+  return vec4(1.0, 1.0, 1.0, o*(1.0 - wood));
+}
+
+// Persian girih (Timurid and Safavid, 15th–17th c.): ten-pointed stars whose straps run straight on past
+// their tips to meet the neighbours, filling a pointed arch
+float girihStraps(vec2 l){
+  vec2 a = vec2(0.25, 0.25*1.3764);   // centred lattice, its diagonal at 54 degrees
+  vec2 p1 = l - a*floor(l/a + 0.5), p2 = l - a*(floor(l/a) + 0.5);
+  vec2 p = dot(p1, p1) < dot(p2, p2) ? p1 : p2;
+  // fold into one tenth of the star, a tip on the axis
+  float th = mod(atan(p.y, p.x) - PI*0.5 + PI*0.1, PI*0.2) - PI*0.1;
+  vec2 q = length(p)*vec2(cos(abs(th)), sin(abs(th)));
+  vec2 T = vec2(0.105, 0.0);
+  float d = min(abs(dot(q - T, vec2(0.5878, 0.809))), abs(dot(q - T, vec2(-0.5878, 0.809))));
+  return d;   // distance to the nearest strap's centre line
+}
+vec4 girihW(vec2 l){
+  float o = archIn(l, 0.4, 0.08, 0.45, -0.58);
+  float d = girihStraps(l - vec2(0.0, 0.03));
+  return vec4(1.0, 1.0, 1.0, o*smoothstep(0.009, 0.013, d));
+}
+
+// Mughal jali (Fatehpur Sikri, 1580s): a marble screen pierced with six-pointed stars on a hexagonal grid,
+// small triangles between, set in a cusped arch
+float sdHexagram(vec2 p, float r){
+  const vec4 k = vec4(-0.5, 0.8660254, 0.5773503, 1.7320508);
+  p = abs(p);
+  p -= 2.0*min(dot(k.xy, p), 0.0)*k.xy;
+  p -= 2.0*min(dot(k.yx, p), 0.0)*k.yx;
+  p -= vec2(clamp(p.x, r*k.z, r*k.w), r);
+  return length(p)*sign(p.y);
+}
+vec4 sikriW(vec2 l){
+  float o = cusped(l, 0.36, 0.1, -0.58, 4.0, 0.24);
+  vec2 s = vec2(0.13, 0.13*1.7320508);
+  vec2 p1 = l - s*floor(l/s + 0.5), p2 = l - s*(floor(l/s) + 0.5);
+  vec2 p = dot(p1, p1) < dot(p2, p2) ? p1 : p2;
+  float star = step(sdHexagram(p, 0.03), 0.0);
+  // the small holes sit where three cells meet
+  vec2 v = vec2(abs(p.x), abs(p.y));
+  float tri = step(length(v - vec2(0.065, 0.0375)), 0.011);
+  return vec4(1.0, 1.0, 1.0, o*max(star, tri));
+}
+
+// Rajput jharokha (Rajasthan, 17th–18th c.): a balcony window of three trefoil arches on slim columns
+// over a low parapet pierced with quatrefoils
+vec4 jharokhaW(vec2 l){
+  float pw = 0.27, i = clamp(floor((l.x + 0.405)/pw), 0.0, 2.0);
+  float u = l.x - (-0.405 + pw*(i + 0.5));
+  float o = step(abs(l.x), 0.405)*cusped(vec2(u, l.y), 0.1, 0.13, -0.28, 3.0, 0.3);
+  vec2 pp = l - vec2(0.0, -0.43);
+  vec2 g = (fract(pp/0.065 + 0.5) - 0.5)*0.065;
+  o = max(o, inBox(pp, vec2(0.39, 0.075))*foil(g, 0.025, 4.0));
+  return vec4(1.0, 1.0, 1.0, o);
+}
+
 vec4 historic(vec2 l){
+  if (style == 20) return mashrabiyaW(l);
+  if (style == 21) return girihW(l);
+  if (style == 22) return sikriW(l);
+  if (style == 23) return jharokhaW(l);
   if (style == 11) return roseW(l);
   if (style == 12) return traceryW(l);
   if (style == 13) return palladianW(l);

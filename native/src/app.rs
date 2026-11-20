@@ -613,6 +613,31 @@ impl App {
                 r.drop_target(c);
                 base64(&png_bytes(w, h, &rgb))
             }
+            // pictures for the control page's buttons: each window's shape and each plant's silhouette, as
+            // base64 PNGs, drawn still (no rain, cat, frost or wind)
+            "glyphs" => {
+                let mut f = self.frame(now);
+                (f.rain, f.cat, f.frost, f.gust, f.time) = (0.0, [0.0; 4], 0.0, 0.0, 0.0);
+                f.season[3] = 0.0;
+                let mut styles = serde_json::Map::new();
+                for (i, name) in STYLES.iter().enumerate() {
+                    f.style = i as i32;
+                    styles.insert(name.to_string(), base64(&png_rgba(60, 68, &r.glyph(&f, false, 60, 68))).into());
+                }
+                let mut plants = serde_json::Map::new();
+                for (i, name) in PLANTS.iter().enumerate().skip(1) {
+                    f.plant = i as i32;
+                    // the plant fills only part of its plane, so crop to where its leaves are
+                    let (w, h) = (192usize, 180usize);
+                    let px = r.glyph(&f, true, w as i32, h as i32);
+                    let inked: Vec<(usize, usize)> = (0..w * h).filter(|i| px[i * 4 + 3] > 24).map(|i| (i % w, i / w)).collect();
+                    let (x0, x1) = (inked.iter().map(|p| p.0).min().unwrap_or(0), inked.iter().map(|p| p.0).max().unwrap_or(w - 1));
+                    let (y0, y1) = (inked.iter().map(|p| p.1).min().unwrap_or(0), inked.iter().map(|p| p.1).max().unwrap_or(h - 1));
+                    let crop: Vec<u8> = (y0..=y1).flat_map(|y| px[(y * w + x0) * 4..(y * w + x1 + 1) * 4].to_vec()).collect();
+                    plants.insert(name.to_string(), base64(&png_rgba((x1 - x0 + 1) as i32, (y1 - y0 + 1) as i32, &crop)).into());
+                }
+                serde_json::json!({ "style": styles, "plant": plants }).to_string()
+            }
             // lock screen hooks: sleep fades to dark and stops drawing; wake fades in while the sun sweeps up to now
             "sleep" => { self.fade = Tween { from: self.fade.at(now), to: 0.0, t0: now, dur: 0.8 }; "sleeping".into() }
             "wake" => {
@@ -683,6 +708,15 @@ fn png_bytes(w: i32, h: i32, rgb: &[u8]) -> Vec<u8> {
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
     if let Ok(mut wr) = enc.write_header() { let _ = wr.write_image_data(rgb); }
+    out
+}
+
+fn png_rgba(w: i32, h: i32, rgba: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, w as u32, h as u32);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    if let Ok(mut wr) = enc.write_header() { let _ = wr.write_image_data(rgba); }
     out
 }
 

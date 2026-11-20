@@ -75,6 +75,11 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - `moon`: a Chinese garden moon window filled with ice-ray lattice.
   - `persian`: a Qajar orosi with three pointed sashes and a star lattice of jewel-coloured glass.
   - `nouveau`: Art Nouveau stems rising to stylised roses, with leaves and an amber band.
+  - Added later, from Arab, Persian and Indian traditions:
+    - `mashrabiya`: a Cairene screen of turned spindles with beads, closer-set below, a hatch open at eye level and a frieze of small arches.
+    - `girih`: Persian strapwork of ten-pointed stars running on to meet their neighbours, in a pointed arch.
+    - `sikri`: a Mughal marble jali of six-pointed stars on a hexagonal grid, in a cusped arch.
+    - `jharokha`: a Rajput balcony window of three trefoil arches over a parapet pierced with quatrefoils.
 - `--pool historic` (or `ctl set pool=historic`) makes shuffles draw only from these, and the page has its own row of them.
 - Cost at 4K: 1.1 to 1.6 ms per frame with rain, a plant and both caustics.
 
@@ -128,6 +133,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - The control page opens on a live preview of the wallpaper, a 640×360 still the app renders on request (`ctl preview` returns it as base64 PNG) and refreshes every 4 seconds.
 - Shuffle, keep and sleep sit under the preview, with cat, birds, car and breeze below them.
 - Window, room and light controls are grouped into their own cards. Wall moods show their colour, and facing reads as a compass direction.
+- Each window and plant button shows a small picture of its shape, drawn by the wallpaper's own shaders on page load (`ctl glyphs` returns them as base64 PNGs); windows show their glass colours.
 - The header shows the clock, the season and where the sun is, plus badges for time-lapse, shuffling or sleep.
 - Favourites read as "georgian · ficus" with a wall swatch; signals show a coloured state dot, a level bar and what each one drives.
 - Replies appear as a short toast. On a phone-width screen the cards stack with the scene controls straight after the preview.

@@ -71,6 +71,10 @@
   .tile.primary:hover { background:linear-gradient(180deg, #f9cf86, #eeab53) }
   .tile.heart.on { background:#d9566f; border-color:#d9566f; color:white }
   .swatch { display:inline-flex; align-items:center; gap:7px }
+  /* window and plant buttons carry a small picture of their shape: light on a dark wall */
+  .glyph { display:inline-flex; flex-direction:column; align-items:center; gap:4px; border-radius:12px; padding:6px 7px 5px; font-size:12px; min-width:60px }
+  .glyph img { width:36px; height:41px; display:block; background:#1a1512; border-radius:6px }
+  #plant .glyph img { width:41px; height:38px; object-fit:contain; padding:3px; box-sizing:border-box }
   .swatch i { width:13px; height:13px; border-radius:50%; display:inline-block; box-shadow:inset 0 0 0 1px #0005 }
   .slider { display:grid; grid-template-columns:62px 1fr 64px; align-items:center; gap:10px; margin-top:8px }
   .slider span:first-child { color:var(--dim) }
@@ -378,6 +382,7 @@ async function poll() {
   chips('styleh', C.style.slice(h), L.style, 'style');
   chips('mood', C.mood, L.mood, 'mood', C.mood_wall);
   chips('plant', C.plant, L.plant);
+  deck();
   chips('caustic', C.caustic, L.caustic);
   chips('lamp', C.lamp, L.lamp);
   for (const b of $('lamp').children) b.title = LAMP[b.dataset.v] || '';
@@ -451,6 +456,17 @@ async function poll() {
     const p = el('div'); p.append('signals in ', el('code', '', sg.dir), ' · map ', el('code', '', sg.map)); foot.append(p);
   }
 }
-poll(); setInterval(poll, 1500); shot();
+// the pictures for the window and plant buttons, drawn once by the wallpaper itself
+let G = null;
+async function glyphs() { try { G = JSON.parse(await (await fetch('/cmd', { method: 'POST', body: 'glyphs' })).text()); deck(); } catch {} }
+function deck() {
+  if (!G) return;
+  for (const [id, set] of [['style', G.style], ['styleh', G.style], ['plant', G.plant]])
+    for (const b of $(id).children) if (set[b.dataset.v] && !b.querySelector('img')) {
+      const im = el('img'); im.src = 'data:image/png;base64,' + set[b.dataset.v]; im.alt = '';
+      b.classList.add('glyph'); b.prepend(im);
+    }
+}
+poll(); setInterval(poll, 1500); shot(); glyphs();
 </script>
 </body></html>
