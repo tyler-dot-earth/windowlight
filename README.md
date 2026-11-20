@@ -26,7 +26,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - `native/wl.sh` builds it with nix tools (cargo cache stays in the folder) and runs it:
   - `./wl.sh run --plant olive --caustic both` draws on DP-2 (`--output`, `--fps 30`, `--scale 0.5` for a cheaper half-resolution buffer)
   - `./wl.sh run --workspaces linen,sage,nocturne,terracotta` follows niri and fades the mood when the active workspace on that output changes
-  - `./wl.sh run --random` picks a look at start, and `--shuffle 30` picks a new one every 30 minutes
+  - `./wl.sh run --random` picks a look at start, and `--shuffle 20s` (or `5m`, `1h`) crossfades to a new random look on that interval; `ctl set shuffle=10s` or `shuffle=off` changes it while running
   - `./wl.sh ctl random all`, `ctl mood sage`, `ctl set style=arch tilt=50`, `ctl get` change the running wallpaper; mood-only changes tween the colours and anything else crossfades
   - `./wl.sh ctl sleep` fades to dark and stops drawing; `ctl wake` fades back in while the sun sweeps up from 70 minutes earlier, meant for a locker's before-lock and after-unlock hooks
   - `./wl.sh sample 24 dir` renders 24 random looks in daylight with `dir/looks.txt` holding each one's flags, and `./wl.sh shot out.png --size 3840x2160 ...` renders one still

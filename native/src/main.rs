@@ -21,7 +21,7 @@ fn usage() -> ! {
   look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --random\n\
   place:  --lat X --lon Y\n\
   time:   --at 2026-11-19T11:00 --speed X --anim SECONDS\n\
-  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle MINUTES\n\
+  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m\n\
   stills: --size 1920x1080 --frames 120 (bench)");
     std::process::exit(2)
 }
@@ -40,7 +40,7 @@ struct Cli { opts: Opts, pos: Vec<String>, random: bool, frames: usize, size_set
 fn parse(args: &[String]) -> Cli {
     let mut o = Opts {
         lat: 37.77, lon: -122.42, look: Look::default(), speed: 1.0, at_ms: None, anim: 0.0,
-        fps: 30.0, scale: 1.0, output: "DP-2".into(), workspaces: vec![], shuffle_min: None, size: (1920, 1080),
+        fps: 30.0, scale: 1.0, output: "DP-2".into(), workspaces: vec![], shuffle_secs: None, size: (1920, 1080),
     };
     let (mut pos, mut random, mut frames, mut size_set) = (vec![], false, 120, false);
     let mut i = 0;
@@ -57,7 +57,7 @@ fn parse(args: &[String]) -> Cli {
             "anim" => o.anim = num(),
             "fps" => o.fps = num().max(1.0),
             "scale" => o.scale = num().clamp(0.1, 2.0),
-            "shuffle" => o.shuffle_min = Some(num()),
+            "shuffle" => o.shuffle_secs = app::parse_secs(v).unwrap_or_else(|| { eprintln!("--shuffle wants 20s, 5m or 1h"); std::process::exit(2) }),
             "frames" => frames = num() as usize,
             "at" => o.at_ms = Some(parse_at(v)),
             "output" => o.output = v.clone(),

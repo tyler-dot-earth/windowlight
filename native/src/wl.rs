@@ -90,8 +90,8 @@ fn run_inner(o: Opts) -> Result<(), String> {
     let r = unsafe { Renderer::new(gl.glow())? };
 
     unsafe {
-        libc::signal(libc::SIGTERM, on_signal as libc::sighandler_t);
-        libc::signal(libc::SIGINT, on_signal as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, on_signal as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
     }
     let (tx, rx) = ipc::listen()?;
     if !o.workspaces.is_empty() { ipc::follow_niri(o.output.clone(), tx.clone()); }

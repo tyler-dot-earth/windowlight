@@ -7,7 +7,7 @@ use std::time::Instant;
 #[derive(Clone)]
 pub struct Opts {
     pub lat: f64, pub lon: f64, pub look: Look, pub speed: f64, pub at_ms: Option<f64>, pub anim: f64,
-    pub fps: f64, pub scale: f64, pub output: String, pub workspaces: Vec<usize>, pub shuffle_min: Option<f64>, pub size: (i32, i32),
+    pub fps: f64, pub scale: f64, pub output: String, pub workspaces: Vec<usize>, pub shuffle_secs: Option<f64>, pub size: (i32, i32),
 }
 
 #[derive(Clone, Copy)]
@@ -98,8 +98,8 @@ impl App {
 
     pub unsafe fn render(&mut self, r: &Renderer, fb: Option<glow::Framebuffer>, w: i32, h: i32) {
         let now = Instant::now();
-        if let Some(m) = self.o.shuffle_min {
-            if (now - self.last_shuffle).as_secs_f64() > m * 60.0 { self.command(r, "random"); }
+        if let Some(m) = self.o.shuffle_secs {
+            if (now - self.last_shuffle).as_secs_f64() > m { self.command(r, "random all"); }
         }
         if self.prev.is_some() && self.xfade.done(now) {
             let (_, _, old) = self.prev.take().unwrap();
@@ -117,6 +117,17 @@ impl App {
         if self.fade.to == 0.0 && self.fade.done(now) { self.asleep = true; }
     }
 
+}
+
+/// "20s", "5m", "1h" or plain seconds; "off" or 0 turns it off
+pub fn parse_secs(v: &str) -> Option<Option<f64>> {
+    if v == "off" { return Some(None); }
+    let (n, mul) = match v.chars().last()? { 's' => (&v[..v.len() - 1], 1.0), 'm' => (&v[..v.len() - 1], 60.0), 'h' => (&v[..v.len() - 1], 3600.0), _ => (v, 1.0) };
+    let x = n.parse::<f64>().ok()? * mul;
+    Some(if x > 0.0 { Some(x.max(3.0)) } else { None })
+}
+
+impl App {
     /// handle one control line; returns the reply
     pub unsafe fn command(&mut self, r: &Renderer, line: &str) -> String {
         let now = Instant::now();
@@ -144,6 +155,10 @@ impl App {
                 for (k, v) in pairs {
                     match next.set(&k, &v) {
                         Ok(true) => {}
+                        Ok(false) if k == "shuffle" => match parse_secs(&v) {
+                            Some(s) => { self.o.shuffle_secs = s; self.last_shuffle = now; }
+                            None => return format!("error: shuffle wants 20s, 5m, 1h or off"),
+                        },
                         Ok(false) => match (k.as_str(), v.parse::<f64>()) {
                             ("lat", Ok(x)) => self.o.lat = x,
                             ("lon", Ok(x)) => self.o.lon = x,
@@ -173,8 +188,8 @@ impl App {
                 self.warp_min = Tween { from: -70.0, to: 0.0, t0: now, dur: 3.2 };
                 "awake".into()
             }
-            "get" => self.look.flags(),
-            _ => "commands: random [all] | set key=value ... | mood/style/plant/caustic NAME | sleep | wake | get".into(),
+            "get" => match self.o.shuffle_secs { Some(s) => format!("{} (shuffling every {s:.0}s)", self.look.flags()), None => self.look.flags() },
+            _ => "commands: random [all] | set key=value ... (shuffle=20s|off) | mood/style/plant/caustic NAME | sleep | wake | get".into(),
         }
     }
 }
