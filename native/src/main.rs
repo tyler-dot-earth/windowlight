@@ -21,7 +21,7 @@ use std::time::Instant;
 fn usage() -> ! {
     eprintln!("usage: windowlight run|shot OUT.png|sample N DIR|bench|ctl WORDS...\n\
   look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --rain on|off --prism on|off --lamp L --random\n\
-  place:  --lat X --lon Y --season auto|spring|summer|autumn|winter\n\
+  place:  --lat X --lon Y (else the place picked on the page) --season auto|spring|summer|autumn|winter\n\
   time:   --at 2026-11-19T11:00 --speed X --anim SECONDS\n\
   live:   --output NAME (default: first) --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n          --pool all|favourites|historic --cat 10m|off --passing 4m|off --breeze on|off --ui 7417|off\n\
   signals: --signals DIR|off (default $XDG_RUNTIME_DIR/windowlight/signals) --signal-map FILE (default signals.map here)\n\
@@ -47,6 +47,7 @@ fn parse(args: &[String]) -> Cli {
         cat_secs: Some(600.0), pool: "all", breeze: true, ui_port: Some(7417), season: None, pass_secs: Some(240.0),
         signals: Some(signals::default_dir()), signal_map: signals::default_map(),
     };
+    if let Some((lat, lon)) = app::load_place() { (o.lat, o.lon) = (lat, lon); }
     let (mut pos, mut random, mut frames, mut size_set) = (vec![], false, 120, false);
     let mut i = 0;
     while i < args.len() {

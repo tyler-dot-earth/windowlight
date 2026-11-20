@@ -202,6 +202,20 @@
   .light .stack { display:flex; flex-direction:column; gap:18px; min-width:0 }
   .light .seg { flex-wrap:wrap }
 
+  /* where: the sun, the earth and the moon as they are now; click the earth to live there */
+  .orrery { position:relative; margin:-6px -8px 0 }
+  #globe { display:block; width:100%; aspect-ratio:1.25; touch-action:none;
+           -webkit-mask:linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent), linear-gradient(transparent, #000 7%, #000 93%, transparent);
+           -webkit-mask-composite:source-in; mask:linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent), linear-gradient(transparent, #000 7%, #000 93%, transparent);
+           mask-composite:intersect; cursor:grab; outline:none; border-radius:16px }
+  #globe.over { cursor:crosshair }
+  #globe:active { cursor:grabbing }
+  #globe:focus-visible { box-shadow:0 0 0 2px #f4b86066 }
+  .hint { margin-top:4px; font-size:11.5px; color:var(--faint); text-align:center }
+  .where { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:2px 12px; margin-top:8px; font-size:13px; color:var(--dim); font-variant-numeric:tabular-nums }
+  .where b { color:var(--ink); font-weight:550 }
+  .where span { white-space:nowrap }
+
   /* air */
   .air { grid-template-columns:56px 1fr 78px 32px }
   .air > span:first-child { cursor:help }
@@ -314,6 +328,15 @@
           <button class="btn ghost" data-cmd="car" title="a car's windscreen flashes by"><svg class="ico"><use href="#i-car"/></svg>car</button>
           <button class="btn ghost" data-cmd="gust 0.9" title="a gust through the plant"><svg class="ico"><use href="#i-wind"/></svg>breeze</button>
         </div>
+      </section>
+
+      <section style="--o:4">
+        <h2>Where <small id="wherename"></small></h2>
+        <div class="orrery">
+          <canvas id="globe" tabindex="0" role="img" aria-label="the sun, the earth and the moon; click the earth to choose where you live, drag to turn it"></canvas>
+        </div>
+        <div class="where"><span id="wherell"></span><span class="moon" id="wheremoon"></span></div>
+        <div class="hint">drag to turn it · click the earth to live there</div>
       </section>
 
       <section style="--o:6">
@@ -600,6 +623,7 @@ async function poll() {
   try { st = await (await fetch('/state')).json(); }
   catch { $('status').replaceChildren(el('span', 'pill off', 'not running')); return; }
   const L = st.look, C = st.choices;
+  globeSync();
   document.documentElement.style.setProperty('--wall', C.mood_wall[C.mood.indexOf(L.mood)] || '#d1b79b');
 
   // header
@@ -715,6 +739,294 @@ function deck() {
     if (src && !p.firstChild) { const s = el('i', 'sil'); s.style.setProperty('--m', `url(data:image/png;base64,${src})`); p.append(s); }
   }
 }
-poll(); setInterval(poll, 1500); shot(); glyphs();
+// ---- where: the sun, the earth and the moon where they really are; click the earth to live there
+const RAD = Math.PI / 180, clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const V = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  sc: (a, k) => [a[0] * k, a[1] * k, a[2] * k], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+  rot: (v, k, a) => { const c = Math.cos(a), s = Math.sin(a), d = V.dot(k, v) * (1 - c), x = V.cross(k, v); return [v[0] * c + x[0] * s + k[0] * d, v[1] * c + x[1] * s + k[1] * d, v[2] * c + x[2] * s + k[2] * d]; },
+};
+// earth-fixed: x through lat 0 lon 0, z through the north pole
+const ecef = (lat, lon) => [Math.cos(lat * RAD) * Math.cos(lon * RAD), Math.cos(lat * RAD) * Math.sin(lon * RAD), Math.sin(lat * RAD)];
+const latlon = p => [Math.asin(clamp(p[2], -1, 1)) / RAD, Math.atan2(p[1], p[0]) / RAD];
+
+// where the sun and moon are over the earth at a moment (low precision, well under a degree for the sun, about one for the moon)
+function sky(ms) {
+  const d = ms / 864e5 - 10957.5, e = (23.439 - 3.6e-7 * d) * RAD, gmst = 280.46061837 + 360.98564736629 * d;
+  const g = (357.529 + 0.98560028 * d) * RAD, ls = (280.459 + 0.98564736 * d + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD;
+  const fixed = (lam, beta) => {
+    const ra = Math.atan2(Math.sin(lam) * Math.cos(e) - Math.tan(beta) * Math.sin(e), Math.cos(lam));
+    const dec = Math.asin(Math.sin(beta) * Math.cos(e) + Math.cos(beta) * Math.sin(e) * Math.sin(lam));
+    return ecef(dec / RAD, ra / RAD - gmst);
+  };
+  const moon = t => { const M = (134.963 + 13.064993 * t) * RAD, F = (93.272 + 13.229350 * t) * RAD; return [(218.316 + 13.176396 * t + 6.289 * Math.sin(M)) * RAD, 5.128 * Math.sin(F) * RAD]; };
+  const [ml, mb] = moon(d), [ml2, mb2] = moon(d + 0.5);
+  const s = fixed(ls, 0), m = fixed(ml, mb), ahead = fixed(ml2, mb2);
+  const age = ((ml - ls) / RAD % 360 + 360) % 360;
+  return { s, m, n: V.norm(V.cross(m, ahead)), lit: (1 - Math.cos(age * RAD)) / 2, waxing: age < 180 };
+}
+const phase = (lit, waxing) => lit < 0.03 ? 'new moon' : lit > 0.97 ? 'full moon' : lit > 0.45 && lit < 0.55 ? (waxing ? 'first quarter' : 'last quarter')
+  : (waxing ? 'waxing ' : 'waning ') + (lit < 0.5 ? 'crescent' : 'gibbous');
+
+const CITIES = `San Francisco 37.77 -122.42|Los Angeles 34.05 -118.24|Portland 45.52 -122.68|Seattle 47.61 -122.33|Vancouver 49.28 -123.12|Phoenix 33.45 -112.07|Denver 39.74 -104.99|Austin 30.27 -97.74|Mexico City 19.43 -99.13|Chicago 41.88 -87.63|Toronto 43.65 -79.38|Montreal 45.5 -73.57|New York 40.71 -74.01|Boston 42.36 -71.06|Miami 25.76 -80.19|Havana 23.11 -82.37|Bogotá 4.71 -74.07|Quito -0.18 -78.47|Lima -12.05 -77.04|Cusco -13.53 -71.97|Santiago -33.45 -70.67|Buenos Aires -34.6 -58.38|São Paulo -23.55 -46.63|Rio de Janeiro -22.91 -43.17|Ushuaia -54.8 -68.3|Honolulu 21.31 -157.86|Anchorage 61.22 -149.9|Nuuk 64.18 -51.72|Reykjavík 64.15 -21.94|Dublin 53.35 -6.26|Edinburgh 55.95 -3.19|London 51.51 -0.13|Lisbon 38.72 -9.14|Madrid 40.42 -3.7|Marrakesh 31.63 -7.99|Fez 34.03 -5.0|Paris 48.86 2.35|Amsterdam 52.37 4.9|Copenhagen 55.68 12.57|Oslo 59.91 10.75|Stockholm 59.33 18.07|Tromsø 69.65 18.96|Berlin 52.52 13.4|Prague 50.08 14.44|Vienna 48.21 16.37|Rome 41.9 12.5|Tunis 36.8 10.18|Athens 37.98 23.73|Kyiv 50.45 30.52|Istanbul 41.01 28.98|Moscow 55.76 37.62|Beirut 33.89 35.5|Cairo 30.04 31.24|Lagos 6.52 3.38|Accra 5.6 -0.19|Addis Ababa 9.03 38.74|Nairobi -1.29 36.82|Johannesburg -26.2 28.05|Cape Town -33.92 18.42|Dubai 25.2 55.27|Tehran 35.69 51.39|Isfahan 32.65 51.67|Mumbai 19.08 72.88|Jaipur 26.91 75.79|Agra 27.18 78.01|Delhi 28.61 77.21|Bangalore 12.97 77.59|Kathmandu 27.72 85.32|Lhasa 29.65 91.17|Dhaka 23.81 90.41|Ulaanbaatar 47.89 106.91|Hanoi 21.03 105.85|Bangkok 13.76 100.5|Singapore 1.35 103.82|Jakarta -6.21 106.85|Manila 14.6 120.98|Hong Kong 22.32 114.17|Taipei 25.03 121.57|Shanghai 31.23 121.47|Beijing 39.9 116.41|Seoul 37.57 126.98|Kyoto 35.01 135.77|Tokyo 35.68 139.69|Perth -31.95 115.86|Melbourne -37.81 144.96|Sydney -33.87 151.21|Auckland -36.85 174.76|McMurdo -77.85 166.67`
+  .split('|').map(c => { const w = c.split(' '), lon = +w.pop(), lat = +w.pop(); return [w.join(' '), ecef(lat, lon)]; });
+function placeName(lat, lon) {
+  const p = ecef(lat, lon); let best = null, bd = -2;
+  for (const [n, q] of CITIES) { const d = V.dot(p, q); if (d > bd) { bd = d; best = n; } }
+  if (Math.acos(clamp(bd, -1, 1)) * 6371 < 650) return 'near ' + best;
+  return land(lat, lon) > 0.5 ? 'far from anywhere' : 'out at sea';
+}
+const fmtLL = (lat, lon) => `${Math.abs(lat).toFixed(1)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}° ${lon >= 0 ? 'E' : 'W'}`;
+
+// the coastlines: rings of quarter-degree steps, drawn once into a land map
+const MW = 1024, MH = 512;
+let LAND = null, COAST = null;
+function land(lat, lon) {
+  if (!LAND) return 0;
+  const x = ((lon + 180) / 360 * MW | 0) & (MW - 1), y = clamp((90 - lat) / 180 * MH | 0, 0, MH - 1);
+  return LAND[y * MW + x] / 255;
+}
+async function loadLand() {
+  const txt = await (await fetch('/land.txt')).text();
+  const map = (blur) => {
+    const c = document.createElement('canvas'); c.width = MW; c.height = MH;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#000'; x.fillRect(0, 0, MW, MH);
+    x.filter = `blur(${blur}px)`; x.fillStyle = '#fff'; x.beginPath();
+    for (const ring of txt.split(';')) {
+      let lo = 0, la = 0;
+      ring.split(' ').forEach((st, i) => { const [a, b] = st.split(','); lo += +a; la += +b; const X = (lo / 4 + 180) / 360 * MW, Y = (90 - la / 4) / 180 * MH; i ? x.lineTo(X, Y) : x.moveTo(X, Y); });
+      x.closePath();
+    }
+    x.fill('evenodd');
+    const d = x.getImageData(0, 0, MW, MH).data, out = new Uint8Array(MW * MH);
+    for (let i = 0; i < out.length; i++) out[i] = d[i * 4];
+    return out;
+  };
+  LAND = map(0.6); COAST = map(7);
+}
+
+// the view: f points at the camera, r to the right, u up; it settles where the place is in view with the sun off to one side
+const O = { f: null, r: null, ft: null, rt: null, touched: -1e9, ms: 0, msAt: 0, rate: 1, lat: 0, lon: 0, hover: null, down: null, last: 0, raf: 0, sk: null };
+function aim(s, loc) {
+  let w = V.sub(loc, V.sc(s, V.dot(loc, s)));
+  if (Math.hypot(...w) < 1e-3) w = V.sub([0, 0, 1], V.sc(s, s[2]));
+  w = V.norm(w);
+  const c = clamp(Math.acos(clamp(V.dot(s, loc), -1, 1)), 70 * RAD, 115 * RAD);
+  const f = V.add(V.sc(s, Math.cos(c)), V.sc(w, Math.sin(c)));
+  let r = V.norm(V.sub(V.sc(f, V.dot(s, f)), s));
+  if (V.cross(f, r)[2] < 0) r = V.sc(r, -1);           // keep north up; the sun goes to the right instead
+  return { f, r };
+}
+function layout(cv) {
+  const W = cv.clientWidth, H = W / 1.25, R = W * 0.24;
+  const sl = O.sk ? V.dot(O.sk.s, O.r) : -1;
+  return { W, H, R, cx: W * (0.5 - 0.1 * clamp(sl * 1.6, -1, 1)), cy: H * 0.5 };
+}
+function project(p, L, k = 1) { const u = V.cross(O.f, O.r); return [L.cx + L.R * k * V.dot(p, O.r), L.cy - L.R * k * V.dot(p, u), V.dot(p, O.f)]; }
+function pick(cv, mx, my) {
+  const L = layout(cv), x = (mx - L.cx) / L.R, y = -(my - L.cy) / L.R, q = x * x + y * y;
+  if (q >= 1) return null;
+  const u = V.cross(O.f, O.r), z = Math.sqrt(1 - q);
+  return latlon(V.add(V.add(V.sc(O.r, x), V.sc(u, y)), V.sc(O.f, z)));
+}
+
+const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const C = { deep: hex('#16324a'), shallow: hex('#2e6f7e'), green: hex('#5f7040'), sand: hex('#b49a62'), ice: hex('#e4e8e6'),
+            nsea: hex('#05080e'), nland: hex('#0d1116'), dusk: hex('#ff8a3c'), air: hex('#7fb2e0'), glint: hex('#fff0d2') };
+let earthBuf = null, moonBuf = null;
+function canvasOf(buf, S) { if (!buf || buf.width != S) { buf = document.createElement('canvas'); buf.width = buf.height = S; } return buf; }
+
+function paintEarth(L, dpr, s) {
+  const S = Math.ceil((2 * L.R + 2) * dpr); earthBuf = canvasOf(earthBuf, S);
+  const x = earthBuf.getContext('2d'), img = x.createImageData(S, S), D = img.data, u = V.cross(O.f, O.r), F = O.f, Rr = O.r;
+  const h = V.norm(V.add(s, F)), half = L.R + 1;
+  for (let j = 0; j < S; j++) {
+    const vy = -((j + 0.5) / dpr - half) / L.R;
+    for (let i = 0; i < S; i++) {
+      const vx = ((i + 0.5) / dpr - half) / L.R, q = vx * vx + vy * vy;
+      if (q >= 1.0) continue;
+      const vz = Math.sqrt(1 - q);
+      const p0 = Rr[0] * vx + u[0] * vy + F[0] * vz, p1 = Rr[1] * vx + u[1] * vy + F[1] * vz, p2 = Rr[2] * vx + u[2] * vy + F[2] * vz;
+      const lat = Math.asin(p2) / RAD, lon = Math.atan2(p1, p0) / RAD;
+      const mx = ((lon + 180) / 360 * MW | 0) & (MW - 1), my = Math.min(MH - 1, (90 - lat) / 180 * MH | 0), k = my * MW + mx;
+      const ld = LAND ? LAND[k] / 255 : 0, co = COAST ? COAST[k] / 255 : 0;
+      const d = p0 * s[0] + p1 * s[1] + p2 * s[2];
+      const day = clamp((d + 0.12) / 0.34, 0, 1), sun = Math.max(d, 0), al = Math.abs(lat);
+      const icy = al > 66 ? clamp((al - 66) / 6, 0, 1) : 0;
+      const dry = clamp(Math.exp(-(((al - 24) / 10) ** 2)) * 0.9 + 0.12 * Math.sin(lon * 0.09 + lat * 0.13), 0, 1);
+      const sh = co * 0.7, fres = (1 - vz) ** 3, dusk = Math.exp(-(((d + 0.02) / 0.06) ** 2)) * 0.12 * (1 - ld * 0.4);
+      const glint = (1 - ld) * Math.pow(Math.max(0, p0 * h[0] + p1 * h[1] + p2 * h[2]), 60) * 0.55 * day;
+      const o = (j * S + i) * 4;
+      for (let c = 0; c < 3; c++) {
+        const sea = C.deep[c] + (C.shallow[c] - C.deep[c]) * sh;
+        let gr = C.green[c] + (C.sand[c] - C.green[c]) * dry; gr += (C.ice[c] - gr) * icy;
+        const dayc = (sea + (gr - sea) * ld) * (0.5 + 0.8 * sun);
+        const night = C.nsea[c] + (C.nland[c] - C.nsea[c]) * ld;
+        let v = night + (dayc - night) * day + C.dusk[c] * dusk * 0.6 + C.glint[c] * glint + C.air[c] * fres * (0.18 + 0.7 * day);
+        D[o + c] = v > 255 ? 255 : v;
+      }
+      D[o + 3] = clamp((1 - Math.sqrt(q)) * L.R * dpr * 1.2, 0, 1) * 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return S;
+}
+
+// the moon: grey, with its near side's seas, turned to face the earth, lit by the sun
+const MARIA = [[33, -16, 14], [28, 17, 9], [8, 31, 10], [-8, 51, 8], [-21, -17, 9], [18, -55, 20], [17, 59, 6], [-13, -38, 8], [4, -2, 5]]
+  .map(([la, lo, r]) => [ecef(la, lo), Math.cos(r * RAD)]);
+function paintMoon(Rm, dpr, sk) {
+  const S = Math.ceil((2 * Rm + 2) * dpr); moonBuf = canvasOf(moonBuf, S);
+  const x = moonBuf.getContext('2d'), img = x.createImageData(S, S), D = img.data, u = V.cross(O.f, O.r), half = Rm + 1;
+  const a = V.sc(sk.m, -1), b = V.norm(V.cross(sk.n, a)), c3 = V.cross(a, b);   // the moon's own frame: a faces the earth
+  for (let j = 0; j < S; j++) {
+    const vy = -((j + 0.5) / dpr - half) / Rm;
+    for (let i = 0; i < S; i++) {
+      const vx = ((i + 0.5) / dpr - half) / Rm, q = vx * vx + vy * vy;
+      if (q >= 1) continue;
+      const vz = Math.sqrt(1 - q), p = V.add(V.add(V.sc(O.r, vx), V.sc(u, vy)), V.sc(O.f, vz));
+      const l = [V.dot(p, a), V.dot(p, b), V.dot(p, c3)];
+      let sea = 0; for (const [m, cr] of MARIA) { const t = V.dot(l, m); if (t > cr) sea = Math.max(sea, Math.min(1, (t - cr) / (1 - cr) * 4)); }
+      const lit = Math.max(0, V.dot(p, sk.s)), shade = Math.pow(lit, 0.7) * 0.95 + 0.035, alb = 205 - 70 * sea;
+      const o = (j * S + i) * 4;
+      D[o] = alb * shade * 1.0; D[o + 1] = alb * shade * 0.97; D[o + 2] = alb * shade * 0.9;
+      D[o + 3] = clamp((1 - Math.sqrt(q)) * Rm * dpr * 1.4, 0, 1) * 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return S;
+}
+
+const STARS = (() => { let x = 7; const rnd = () => (x = (x * 16807) % 2147483647) / 2147483647; return Array.from({ length: 70 }, () => [rnd(), rnd(), rnd()]); })();
+function draw() {
+  const cv = $('globe'); if (!cv || !O.f || !O.sk) return;
+  const dpr = Math.min(2, devicePixelRatio || 1), L = layout(cv), ctx = cv.getContext('2d');
+  if (cv.width != Math.round(L.W * dpr)) { cv.width = Math.round(L.W * dpr); cv.height = Math.round(L.H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, L.W, L.H);
+  const sk = O.sk, u = V.cross(O.f, O.r);
+  // stars, fainter towards the sun
+  for (const [a, b, c] of STARS) { ctx.fillStyle = `rgba(255,240,220,${0.12 + 0.35 * c})`; ctx.fillRect(a * L.W, b * L.H, c > 0.8 ? 1.4 : 1, c > 0.8 ? 1.4 : 1); }
+  const [sx, sy, sz] = project(sk.s, L, 1.8), Rs = L.R * 0.3;
+  const sunDraw = () => {
+    let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, Rs * 4.2);
+    g.addColorStop(0, '#f4b86055'); g.addColorStop(0.35, '#f4b86018'); g.addColorStop(1, '#f4b86000');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, L.W, L.H);
+    g = ctx.createRadialGradient(sx, sy, 0, sx, sy, Rs);
+    g.addColorStop(0, '#fffaf0'); g.addColorStop(0.55, '#ffe2a6'); g.addColorStop(0.9, '#f8b85c'); g.addColorStop(1, '#f4b86000');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, Rs, 0, 7); ctx.fill();
+  };
+  // the moon's orbit, back half first
+  const Km = 1.42, ring = [], b = V.norm(V.cross(sk.n, sk.m));
+  for (let i = 0; i <= 120; i++) { const t = i / 120 * 2 * Math.PI; ring.push(project(V.add(V.sc(sk.m, Math.cos(t)), V.sc(b, Math.sin(t))), L, Km)); }
+  const orbit = back => {
+    ctx.lineWidth = 1; ctx.strokeStyle = back ? '#e9dcc61a' : '#e9dcc638'; ctx.setLineDash([2, 4]); ctx.beginPath();
+    for (let i = 1; i < ring.length; i++) if ((ring[i][2] < 0) == back) { ctx.moveTo(ring[i - 1][0], ring[i - 1][1]); ctx.lineTo(ring[i][0], ring[i][1]); }
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  const [mx, my, mz] = project(sk.m, L, Km), Rm = L.R * 0.2;
+  const moonDraw = () => { const S = paintMoon(Rm, dpr, sk); ctx.drawImage(moonBuf, mx - Rm - 1, my - Rm - 1, S / dpr, S / dpr); };
+  if (sz < 0) sunDraw();
+  orbit(true);
+  if (mz < 0) moonDraw();
+  // the air around the earth, brighter on the sunny side
+  const off = [V.dot(sk.s, O.r) * L.R * 0.04, -V.dot(sk.s, u) * L.R * 0.04];
+  let g = ctx.createRadialGradient(L.cx + off[0], L.cy + off[1], L.R * 0.96, L.cx + off[0], L.cy + off[1], L.R * 1.13);
+  g.addColorStop(0, '#7fb2e055'); g.addColorStop(1, '#7fb2e000'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L.cx, L.cy, L.R * 1.15, 0, 7); ctx.fill();
+  const S = paintEarth(L, dpr, sk.s); ctx.drawImage(earthBuf, L.cx - L.R - 1, L.cy - L.R - 1, S / dpr, S / dpr);
+  if (sz >= 0) sunDraw();
+  orbit(false);
+  if (mz >= 0) moonDraw();
+  // where you live, and where the pointer would move you
+  const pin = (lat, lon, ghost) => {
+    const [px, py, pz] = project(ecef(lat, lon), L); if (pz <= 0.02) return;
+    ctx.globalAlpha = ghost ? 0.6 : 1;
+    if (!ghost) { g = ctx.createRadialGradient(px, py, 0, px, py, 14); g.addColorStop(0, '#f4b86088'); g.addColorStop(1, '#f4b86000'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, 14, 0, 7); ctx.fill(); }
+    ctx.beginPath(); ctx.arc(px, py, ghost ? 4 : 4.5, 0, 7); ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff8ee'; ctx.stroke();
+    if (!ghost) { ctx.beginPath(); ctx.arc(px, py, 2.4, 0, 7); ctx.fillStyle = '#f4b860'; ctx.fill(); }
+    ctx.globalAlpha = 1;
+  };
+  pin(O.lat, O.lon);
+  if (O.hover) pin(O.hover[0], O.hover[1], true);
+}
+
+function settle(now) {
+  O.raf = 0;
+  if (!O.sk) return;
+  let busy = false;
+  if (O.rate > 20) { O.sk = sky(O.ms + (Date.now() - O.msAt) * O.rate); busy = true; }
+  const t = aim(O.sk.s, ecef(O.lat, O.lon)); O.ft = t.f; O.rt = t.r;
+  if (!O.f) { O.f = O.ft; O.r = O.rt; }
+  if (!O.down && now - O.touched > 4000) {
+    const k = 0.09, f = V.norm(V.add(V.sc(O.f, 1 - k), V.sc(O.ft, k)));
+    let r = V.add(V.sc(O.r, 1 - k), V.sc(O.rt, k)); r = V.norm(V.sub(r, V.sc(f, V.dot(r, f))));
+    if (V.dot(f, O.ft) < 0.99999 || V.dot(r, O.rt) < 0.99999) busy = true;
+    O.f = f; O.r = r;
+  }
+  draw();
+  if (busy) O.raf = requestAnimationFrame(settle);
+}
+const wake = () => { if (!O.raf) O.raf = requestAnimationFrame(settle); };
+
+function globeSync() {
+  if (!st || st.ms == null || !st.place) return;
+  const now = Date.now();
+  if (O.msAt) { const r = (st.ms - O.ms) / Math.max(1, now - O.msAt); O.rate = r > 0 && r < 1e6 ? r : 1; }
+  O.ms = st.ms; O.msAt = now;
+  if (!O.keyT) { O.lat = st.place.lat; O.lon = st.place.lon; }
+  O.sk = sky(st.ms);
+  const name = placeName(O.lat, O.lon), up = V.dot(O.sk.s, ecef(O.lat, O.lon)) > 0;
+  $('wherename').textContent = name;
+  $('wherell').innerHTML = `<b>${fmtLL(O.lat, O.lon)}</b> · ${up ? 'day' : 'night'} there`;
+  $('wheremoon').textContent = `${phase(O.sk.lit, O.sk.waxing)} · ${Math.round(O.sk.lit * 100)}%`;
+  wake();
+}
+
+function globe() {
+  const cv = $('globe');
+  loadLand().then(wake).catch(() => {});
+  new ResizeObserver(wake).observe(cv);
+  const xy = e => { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); O.down = { at: xy(e), last: xy(e), moved: false }; O.touched = performance.now(); });
+  cv.addEventListener('pointermove', e => {
+    const p = xy(e);
+    if (O.down) {
+      const dx = p[0] - O.down.last[0], dy = p[1] - O.down.last[1]; O.down.last = p;
+      if (Math.hypot(p[0] - O.down.at[0], p[1] - O.down.at[1]) > 4) O.down.moved = true;
+      if (O.down.moved) {
+        const k = 1.6 / cv.clientWidth * 2, u = V.cross(O.f, O.r);
+        O.f = V.rot(O.f, u, -dx * k); O.r = V.rot(O.r, u, -dx * k);
+        O.f = V.norm(V.rot(O.f, O.r, -dy * k));
+        O.r = V.norm(V.sub(O.r, V.sc(O.f, V.dot(O.r, O.f))));
+        O.touched = performance.now(); O.hover = null; draw();
+      }
+      return;
+    }
+    O.hover = pick(cv, ...p); cv.classList.toggle('over', !!O.hover);
+    if (O.hover) $('wherename').textContent = placeName(...O.hover);
+    else $('wherename').textContent = placeName(O.lat, O.lon);
+    draw();
+  });
+  cv.addEventListener('pointerleave', () => { O.hover = null; cv.classList.remove('over'); if (st) $('wherename').textContent = placeName(O.lat, O.lon); draw(); });
+  const up = e => {
+    const d = O.down; O.down = null; O.touched = performance.now(); wake();
+    if (!d || d.moved || e.type == 'pointercancel') return;
+    const ll = pick(cv, ...xy(e)); if (!ll) return;
+    O.lat = ll[0]; O.lon = ll[1]; O.keyT = 1;
+    send(`set lat=${ll[0].toFixed(2)} lon=${ll[1].toFixed(2)}`, true).then(t => { O.keyT = 0; toast(/^error/.test(t) ? t : `living ${placeName(ll[0], ll[1])} now`); });
+    draw();
+  };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  // keys walk the place around: arrows move a degree, with shift ten
+  cv.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 10 : 1, m = { ArrowUp: [step, 0], ArrowDown: [-step, 0], ArrowLeft: [0, -step], ArrowRight: [0, step] }[e.key];
+    if (!m) return; e.preventDefault();
+    O.lat = clamp(O.lat + m[0], -89, 89); O.lon = ((O.lon + m[1] + 540) % 360) - 180;
+    clearTimeout(O.keyT); O.keyT = setTimeout(() => send(`set lat=${O.lat.toFixed(2)} lon=${O.lon.toFixed(2)}`, true).then(() => { O.keyT = 0; }), 350);
+    $('wherename').textContent = placeName(O.lat, O.lon); wake();
+  });
+}
+poll(); setInterval(poll, 1500); shot(); glyphs(); globe();
 </script>
 </body></html>

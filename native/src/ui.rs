@@ -7,6 +7,8 @@ use std::sync::mpsc::{channel, Sender};
 use std::time::Duration;
 
 const PAGE: &str = include_str!("../ui.html");
+// coastlines for the globe: Natural Earth 1:110m land (public domain), as quarter-degree steps, made by land.mjs
+const LAND: &str = include_str!("../land.txt");
 
 pub fn serve(port: u16, tx: Sender<Cmd>) {
     let l = match TcpListener::bind(("127.0.0.1", port)) {
@@ -46,6 +48,7 @@ fn handle(mut s: TcpStream, port: u16, tx: &Sender<Cmd>) -> std::io::Result<()> 
     let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
     match (method, path) {
         ("GET", "/") => reply(&mut s, "200 OK", "text/html; charset=utf-8", PAGE),
+        ("GET", "/land.txt") => reply(&mut s, "200 OK", "text/plain", LAND),
         ("GET", "/state") => reply(&mut s, "200 OK", "application/json", &ask(tx, "state")),
         ("POST", "/cmd") => {
             if origin.is_some_and(|o| !ok_hosts.iter().any(|h| o == format!("http://{h}"))) {

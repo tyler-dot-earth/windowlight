@@ -169,6 +169,19 @@ fn save_favs(f: &[String]) -> Result<(), String> {
     std::fs::write(&p, s).map_err(|e| format!("{}: {e}", favs_path()))
 }
 
+/// where the sun is worked out for: "LAT LON" in the config folder, written when the page picks a place
+pub fn place_path() -> String { config_file("place") }
+pub fn load_place() -> Option<(f64, f64)> {
+    let s = std::fs::read_to_string(place_path()).ok()?;
+    let mut w = s.split_whitespace().map(|x| x.parse::<f64>());
+    match (w.next()?, w.next()?) { (Ok(a), Ok(b)) if a.abs() <= 90.0 && b.abs() <= 180.0 => Some((a, b)), _ => None }
+}
+fn save_place(lat: f64, lon: f64) {
+    let p = place_path();
+    if let Some(d) = std::path::Path::new(&p).parent() { let _ = std::fs::create_dir_all(d); }
+    let _ = std::fs::write(&p, format!("{lat:.3} {lon:.3}\n"));
+}
+
 /// favourites match whatever way the window faces, since that gets re-aimed at the light
 fn fav_key(l: &Look) -> String { let mut l = l.clone(); l.facing = 0.0; l.flags() }
 
@@ -376,6 +389,7 @@ impl App {
             "season": SEASONS[self.o.season.unwrap_or(4)], "season_now": SEASONS[self.season(now).iter().enumerate().fold(0, |b, (i, x)| if *x > self.season(now)[b] { i } else { b })],
             "kept": favs.iter().any(|f| Look::from_flags(f).map(|x| fav_key(&x)) == Some(key.clone())),
             "favs": favs,
+            "place": { "lat": self.o.lat, "lon": self.o.lon }, "ms": self.sim_ms(now),
             "sun": { "alt": alt.to_degrees().round(), "az": az.to_degrees().rem_euclid(360.0).round() },
             "signals": self.sig.state(),
             "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "mood_wall": walls, "caustic": CAUSTICS, "lamp": LAMPS, "season": SEASONS },
@@ -468,8 +482,8 @@ impl App {
                             None => return "error: pool wants all, favourites or historic".into(),
                         },
                         Ok(false) => match (k.as_str(), v.parse::<f64>()) {
-                            ("lat", Ok(x)) => self.o.lat = x,
-                            ("lon", Ok(x)) => self.o.lon = x,
+                            ("lat", Ok(x)) => { self.o.lat = x.clamp(-90.0, 90.0); save_place(self.o.lat, self.o.lon); }
+                            ("lon", Ok(x)) => { self.o.lon = (x + 180.0).rem_euclid(360.0) - 180.0; save_place(self.o.lat, self.o.lon); }
                             ("speed", Ok(x)) => { self.base_ms = self.sim_ms(now); self.start = now; self.o.speed = x; }
                             ("fps", Ok(x)) => self.o.fps = x.max(1.0),
                             _ => return format!("error: unknown setting {k}={v}"),
