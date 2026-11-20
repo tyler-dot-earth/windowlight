@@ -12,5 +12,5 @@ if [[ "${1:-}" == build || ! -x "$bin" || -n "$(find "$here/src" "$here/shaders"
 fi
 [[ "${1:-}" == build ]] && exit 0
 # offscreen modes: Mesa would pick the integrated GPU first; prefer the discrete card (the live mode uses the compositor's GPU)
-[[ "${1:-}" =~ ^(shot|sample|bench)$ ]] && export DRI_PRIME=${DRI_PRIME:-1}
+[[ "${1:-}" =~ ^(shot|sample|bench|headless)$ ]] && export DRI_PRIME=${DRI_PRIME:-1}
 exec "$bin" "$@"

@@ -21,7 +21,7 @@ fn usage() -> ! {
   look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --random\n\
   place:  --lat X --lon Y\n\
   time:   --at 2026-11-19T11:00 --speed X --anim SECONDS\n\
-  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m\n\
+  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n\
   stills: --size 1920x1080 --frames 120 (bench)");
     std::process::exit(2)
 }
@@ -40,7 +40,7 @@ struct Cli { opts: Opts, pos: Vec<String>, random: bool, frames: usize, size_set
 fn parse(args: &[String]) -> Cli {
     let mut o = Opts {
         lat: 37.77, lon: -122.42, look: Look::default(), speed: 1.0, at_ms: None, anim: 0.0,
-        fps: 30.0, scale: 1.0, output: "DP-2".into(), workspaces: vec![], shuffle_secs: None, size: (1920, 1080),
+        fps: 30.0, scale: 1.0, output: "DP-2".into(), workspaces: vec![], shuffle_secs: None, size: (1920, 1080), lapse: None,
     };
     let (mut pos, mut random, mut frames, mut size_set) = (vec![], false, 120, false);
     let mut i = 0;
@@ -61,6 +61,7 @@ fn parse(args: &[String]) -> Cli {
             "frames" => frames = num() as usize,
             "at" => o.at_ms = Some(parse_at(v)),
             "output" => o.output = v.clone(),
+            "timelapse" => o.lapse = Some(v.clone()),
             "size" => {
                 let (w, h) = v.split_once('x').unwrap_or_else(|| usage());
                 o.size = (w.parse().unwrap_or_else(|_| usage()), h.parse().unwrap_or_else(|_| usage()));
@@ -91,11 +92,7 @@ fn write_png(path: &str, w: i32, h: i32, rgb: &[u8]) {
     enc.write_header().unwrap().write_image_data(rgb).unwrap();
 }
 
-/// a random facing that puts the sun through the window at time `ms`
-fn sunny_facing(rng: &mut Rng, ms: f64, o: &Opts) -> f64 {
-    let (alt, az) = sun::position(ms, o.lat, o.lon);
-    if alt > 0.0 { az.to_degrees() + (rng.f() - 0.5) * 80.0 } else { 90.0 + rng.f() * 180.0 }
-}
+fn sunny_facing(rng: &mut Rng, ms: f64, o: &Opts) -> f64 { sun::facing_for(rng, ms, o.lat, o.lon) }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -137,21 +134,10 @@ fn main() {
             offscreen(&cli.opts, |r| unsafe {
                 let c = r.canvas(size.0, size.1);
                 let mut log = String::new();
-                let today = chrono::Local::now().date_naive();
                 for i in 0..n {
                     let mut o = cli.opts.clone();
-                    // a random time today with the sun 5 to 55 degrees up, unless --at pins it
-                    let ms = o.at_ms.unwrap_or_else(|| {
-                        use chrono::TimeZone;
-                        let day0 = chrono::Local.from_local_datetime(&today.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap().timestamp_millis() as f64;
-                        let mut ms = day0 + 12.0 * 3.6e6;
-                        for _ in 0..500 {
-                            let t = day0 + rng.f() * 86.4e6;
-                            let alt = sun::position(t, o.lat, o.lon).0.to_degrees();
-                            if (5.0..55.0).contains(&alt) { ms = t; break; }
-                        }
-                        ms
-                    });
+                    // a random sunny moment today unless --at pins it
+                    let ms = o.at_ms.unwrap_or_else(|| sun::sunny_moment(&mut rng, app::now_ms(), o.lat, o.lon));
                     o.at_ms = Some(ms);
                     o.anim = rng.f() * 600.0;
                     let f = sunny_facing(&mut rng, ms, &o);
@@ -167,6 +153,25 @@ fn main() {
                     log.push_str(&line);
                 }
                 std::fs::write(format!("{dir}/looks.txt"), log).unwrap();
+            });
+        }
+        // offscreen test driver: one command per stdin line, "wait SECONDS" keeps rendering; replies go to stdout
+        "headless" => {
+            offscreen(&cli.opts, |r| unsafe {
+                let c = r.canvas(320, 180);
+                let mut a = App::new(cli.opts.clone(), r);
+                for line in std::io::stdin().lines().map_while(Result::ok) {
+                    if let Some(s) = line.strip_prefix("wait ") {
+                        let end = Instant::now() + std::time::Duration::from_secs_f64(s.trim().parse().unwrap_or(1.0));
+                        while Instant::now() < end { a.render(r, Some(c.fb), 320, 180); std::thread::sleep(std::time::Duration::from_millis(33)); }
+                    } else if let Some(p) = line.strip_prefix("shot ") {
+                        a.render(r, Some(c.fb), 320, 180);
+                        write_png(p.trim(), 320, 180, &r.read_rgb(&c));
+                    } else {
+                        println!("> {line}\n{}", a.command(r, &line));
+                    }
+                }
+                a.free(r);
             });
         }
         "bench" => {

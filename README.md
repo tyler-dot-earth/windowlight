@@ -28,6 +28,8 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - `./wl.sh run --workspaces linen,sage,nocturne,terracotta` follows niri and fades the mood when the active workspace on that output changes
   - `./wl.sh run --random` picks a look at start, and `--shuffle 20s` (or `5m`, `1h`) crossfades to a new random look on that interval; `ctl set shuffle=10s` or `shuffle=off` changes it while running
   - `./wl.sh ctl random all`, `ctl mood sage`, `ctl set style=arch tilt=50`, `ctl get` change the running wallpaper; mood-only changes tween the colours and anything else crossfades
+  - `./wl.sh run --timelapse day/2m` loops sunrise to sunset every 2 minutes (`full/5m` for midnight to midnight, `07:00-18:00/90s` for a custom range); `ctl set timelapse=off` or `ctl now` goes back to the real sun
+  - When the real light is too low to show anything, `ctl random all` and `--shuffle` jump to a sunny moment today, and night windows face the moon
   - `./wl.sh ctl sleep` fades to dark and stops drawing; `ctl wake` fades back in while the sun sweeps up from 70 minutes earlier, meant for a locker's before-lock and after-unlock hooks
   - `./wl.sh sample 24 dir` renders 24 random looks in daylight with `dir/looks.txt` holding each one's flags, and `./wl.sh shot out.png --size 3840x2160 ...` renders one still
   - `./wl.sh bench` times frames at 4K
