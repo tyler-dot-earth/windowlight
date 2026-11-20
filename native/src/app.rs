@@ -513,6 +513,26 @@ impl App {
                 }
             }
             // play a source: `signal NAME 0.4|busy|waiting|done|alert|quiet|clear [ttl]`; `signals` lists them
+            "air" => {
+                use crate::signals::AIR;
+                let show = |s: &Signals| AIR.iter().map(|b| match s.pinned.get(b) {
+                    Some(v) => format!("{b} {v:.2}"), None => format!("{b} auto")
+                }).collect::<Vec<_>>().join(" · ");
+                match (rest.first().copied(), rest.get(1).copied()) {
+                    (None, _) => show(&self.sig),
+                    (Some("auto"), None) => { self.sig.pinned.clear(); format!("air follows the signals: {}", show(&self.sig)) }
+                    (Some(name), Some(v)) => {
+                        let Some(b) = AIR.iter().find(|x| **x == name) else { return format!("air wants one of {}", AIR.join(", ")) };
+                        if v == "auto" { self.sig.pinned.remove(b); }
+                        else {
+                            let Ok(x) = v.parse::<f64>() else { return "air NAME wants a level 0..1 or auto".into() };
+                            self.sig.pinned.insert(b, x.clamp(0.0, 1.0));
+                        }
+                        show(&self.sig)
+                    }
+                    _ => format!("air wants NAME LEVEL (0..1 or auto) or auto, NAME one of {}", AIR.join(", ")),
+                }
+            }
             "signal" => {
                 let Some(dir) = self.sig.dir.clone() else { return "signals are off (--signals DIR turns them on)".into() };
                 let (Some(name), Some(v)) = (rest.first(), rest.get(1)) else { return "signal wants NAME VALUE [ttl], value a level 0..1 or busy, waiting, done, alert, quiet or clear".into() };

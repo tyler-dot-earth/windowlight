@@ -132,6 +132,9 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Favourites read as "georgian · ficus" with a wall swatch; signals show a coloured state dot, a level bar and what each one drives.
 - Replies appear as a short toast. On a phone-width screen the cards stack with the scene controls straight after the preview.
 - `state` now also reports the sun's altitude and compass bearing and each mood's wall colour.
+- An air card has sliders for dust, haze, wind, frost and shade, the levels only signals could set before.
+  - Moving one sets it by hand, replacing what the signals say; its `×` chip, or "all back to signals", hands it back.
+  - `ctl air dust 0.6`, `ctl air dust auto` and `ctl air auto` do the same; hand-set levels last until the wallpaper restarts.
 
 ## Setup with Nix
 

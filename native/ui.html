@@ -97,6 +97,11 @@
   .foot { margin-top:12px; padding-top:10px; border-top:1px solid var(--line); color:var(--faint); font-size:12px; display:grid; gap:6px }
   .foot code { color:var(--dim); word-break:break-all }
   .empty { color:var(--faint); font-size:13px; padding:4px 0 }
+  .air { grid-template-columns:62px 1fr 76px }
+  .air span:first-child { cursor:help }
+  .air .num { padding:2px 8px; font-size:12px; justify-self:end; border-color:transparent; background:transparent; color:var(--faint) }
+  .air .num.on { background:var(--chip); border-color:#4a4037; color:var(--ink); font-weight:400 }
+  .air.auto input { opacity:.55 }
   .err { color:#ffb4a4 }
 
   /* favourites */
@@ -144,12 +149,12 @@
         </div>
       </section>
 
-      <section style="--o:5">
+      <section style="--o:6">
         <h2>favourites <small id="favn"></small></h2>
         <div class="favs" id="favs"></div>
       </section>
 
-      <section style="--o:6">
+      <section style="--o:7">
         <h2>over time</h2>
         <div class="settings">
           <label>shuffle every<select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
@@ -188,8 +193,14 @@
         </div>
       </section>
 
+      <section style="--o:5">
+        <h2>air <small>set by hand, or left to the signals</small></h2>
+        <div id="air"></div>
+        <div class="row" style="margin-top:10px"><button data-cmd="air auto">↺ all back to signals</button></div>
+      </section>
 
-      <section style="--o:7">
+
+      <section style="--o:8">
         <h2>signals <small id="sign"></small></h2>
         <div id="sigs"></div>
         <div class="foot" id="sigfoot"></div>
@@ -213,7 +224,10 @@ async function send(line) {
   try { t = await (await fetch('/cmd', { method: 'POST', body: line })).text(); } catch { t = 'error: windowlight isn\'t answering'; }
   // a look comes back as flags; say it the way the favourites do
   const o = t.startsWith('--style') ? parseFlags(t) : null;
-  toast(o ? [o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
+  // air comes back as every level; name only the ones set by hand
+  const air = /\bshade (auto|[\d.]+)$/.test(t) ? [...t.matchAll(/(\w+) ([\d.]+)/g)].map(x => `${x[1]} ${Math.round(x[2] * 100)}%`) : null;
+  toast(air ? (air.length ? 'by hand: ' + air.join(' · ') : 'all air follows the signals')
+        : o ?[o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
           : t.length > 200 ? t.slice(0, 200) + '…' : t);
   poll();
   clearTimeout(shotT); shotT = setTimeout(shot, 1300);   // after the crossfade has mostly settled
@@ -235,6 +249,8 @@ $('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
 $('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
 $('prism').onclick = () => send('prism ' + (st && st.look.prism ? 'off' : 'on'));
 
+const AIR = { dust: 'more specks drifting in the sunbeam', haze: 'softer, milkier light', wind: 'the plant sways in a steady wind',
+              frost: 'frost on the glass, any season', shade: 'the light dims, as if a cloud is over' };
 const compass = d => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((d % 360) + 360) % 360 / 45) % 8];
 const show = { facing: v => `${v}° ${compass(v)}`, tilt: v => `${v}°` };
 for (const k of ['tilt', 'facing']) {
@@ -301,6 +317,23 @@ async function poll() {
   for (const b of $('season').children) b.title = b.dataset.v == 'auto' ? 'follows the date: ' + st.season_now : '';
   $('sunpos').textContent = st.sun.alt > 0 ? `sun ${st.sun.alt}° up, from the ${compass(st.sun.az)}` : 'the sun is down';
   for (const k of ['tilt', 'facing']) if (dragging != k) { const v = Math.round(L[k]); $(k).value = v; $(k + 'v').textContent = show[k](v); }
+
+  // air: sliders follow the signals until moved; the chip beside one sets it back
+  const air = st.signals.air, ab = $('air');
+  if (!ab.childElementCount) for (const { name: k } of air) {
+    const row = el('div', 'slider air'), name = el('span', '', k), r = el('input'), n = el('button', 'num');
+    name.title = AIR[k] || ''; r.type = 'range'; r.min = 0; r.max = 100; r.id = 'air-' + k;
+    r.oninput = () => { dragging = r.id; n.textContent = r.value + '%'; };
+    r.onchange = () => { dragging = null; send(`air ${k} ${(r.value / 100).toFixed(2)}`); };
+    n.onclick = () => { if (st.signals.air.find(a => a.name == k).pinned != null) send(`air ${k} auto`); };
+    row.append(name, r, n); ab.append(row);
+  }
+  for (const a of air) { const k = a.name;
+    const r = $('air-' + k), row = r.parentNode, n = row.lastChild, pin = a.pinned != null;
+    row.classList.toggle('auto', !pin); n.classList.toggle('on', pin);
+    if (dragging != r.id) { const v = Math.round(100 * (pin ? a.pinned : a.level)); r.value = v; n.textContent = pin ? `${v}% ×` : `auto ${v}%`; }
+    n.title = pin ? 'set by hand; click to hand it back to the signals' : 'following the signals';
+  }
 
   // over time
   if (document.activeElement.tagName != 'SELECT') {

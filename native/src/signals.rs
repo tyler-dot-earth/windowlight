@@ -12,6 +12,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 /// everything a signal can drive; each takes a level (how much) and reacts to states and pulses
 pub const BEHAVIOURS: [&str; 10] = ["birds", "wind", "dust", "frost", "haze", "rain", "shade", "suncatcher", "passing", "cat"];
+/// the levels the control page can also set by hand
+pub const AIR: [&str; 5] = ["dust", "haze", "wind", "frost", "shade"];
 pub const STATES: [&str; 5] = ["quiet", "busy", "waiting", "done", "alert"];
 const DEFAULT_TTL: f64 = 300.0;
 
@@ -225,6 +227,8 @@ pub struct Signals {
     last_frame: Option<Instant>,
     /// smoothed amount per behaviour
     amounts: HashMap<&'static str, f64>,
+    /// levels set by hand on the control page; they replace what the signals say until set back to auto
+    pub pinned: HashMap<&'static str, f64>,
     /// one-off nudges waiting for the app: behaviour names
     pub pulses: Vec<&'static str>,
     birds: Vec<Bird>,
@@ -233,7 +237,7 @@ pub struct Signals {
 impl Signals {
     pub fn new(dir: Option<String>, map_path: String) -> Signals {
         Signals { dir, map_path, rules: vec![], map_errs: vec![], map_stamp: None, live: vec![], last_scan: None, last_frame: None,
-                  amounts: HashMap::new(), pulses: vec![], birds: vec![] }
+                  amounts: HashMap::new(), pinned: HashMap::new(), pulses: vec![], birds: vec![] }
     }
 
     fn load_map(&mut self) {
@@ -295,6 +299,7 @@ impl Signals {
         for b in BEHAVIOURS {
             let target = self.live.iter().flat_map(|s| self.rules.iter().filter(|r| r.behaviour == b && glob(&r.pat, &s.name)).map(|r| r.amount(s.level)))
                 .fold(0.0, f64::max);
+            let target = self.pinned.get(b).copied().unwrap_or(target);
             let a = self.amounts.entry(b).or_insert(0.0);
             *a += (target - *a) * k;
         }
@@ -357,6 +362,7 @@ impl Signals {
             "live": self.live.iter().map(|s| serde_json::json!({ "name": s.name, "label": s.label, "level": (s.level * 100.0).round() / 100.0,
                 "state": s.state.name(), "drives": self.behaviours_of(&s.name) })).collect::<Vec<_>>(),
             "behaviours": BEHAVIOURS,
+            "air": AIR.iter().map(|b| serde_json::json!({ "name": b, "level": (self.amount(b) * 100.0).round() / 100.0, "pinned": self.pinned.get(b) })).collect::<Vec<_>>(),
         })
     }
 }
