@@ -5,6 +5,7 @@ uniform float time;
 uniform int style;      // 0 window 1 blinds 2 lattice 3 georgian 4 arch 5 shutters 6 sheer 7 porthole 8 stained 9 slats 10 jali
                         // 11 rose 12 tracery 13 palladian 14 shoji 15 moorish 16 prairie 17 moon 18 persian 19 nouveau
 uniform int plantType;  // 0 none 1 ficus 2 monstera 3 palm 4 olive
+uniform int treeType;   // the tree outside: 0 none 1 oak 2 birch 3 willow 4 pine
 uniform int caustic;    // 0 none 1 pool 2 glass 3 both
 uniform float tilt;     // window plane angle against the wall, radians
 uniform vec3 sun;       // toward the sun, room frame
@@ -40,6 +41,10 @@ const vec2 AP_SIZE = vec2(1.2, 1.35);
 const vec2 FOL_MIN = vec2(-1.25, -0.65);
 const vec2 FOL_SIZE = vec2(2.9, 2.7);
 // the stretch of wall the sun-fade map covers, wider than any view pans
+// the tree outside, on a plane well beyond the glass, and the part of it the patch can see
+const float D_TREE = 4.0;
+const vec2 TREE_MIN = vec2(-1.45, -0.98);
+const vec2 TREE_SIZE = vec2(3.2, 3.2);
 const vec2 FADE_MIN = vec2(-3.2, -1.4);
 const vec2 FADE_SIZE = vec2(6.4, 3.9);
 const float TILE = 2.0;  // plaster tile size in wall units

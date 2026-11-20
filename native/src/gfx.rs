@@ -17,13 +17,15 @@ const CAUS: (i32, i32) = (1024, 1152);
 const AP_SIZE: (f32, f32) = (1.2, 1.35);
 const FOL_SIZE: (f32, f32) = (2.9, 2.7);
 const FADE: (i32, i32) = (384, 234);
+const TREE: (i32, i32) = (1024, 1024);
+const DAP: (i32, i32) = (512, 512);
 
 pub struct Target { pub tex: glow::Texture, pub fb: glow::Framebuffer, pub w: i32, pub h: i32, mips: bool }
 
 /// everything one frame of one scene needs
 #[derive(Clone)]
 pub struct Frame {
-    pub time: f32, pub style: i32, pub plant: i32, pub caustic: i32, pub material: i32, pub tilt: f32,
+    pub time: f32, pub style: i32, pub plant: i32, pub tree: i32, pub caustic: i32, pub material: i32, pub tilt: f32,
     pub sun: [f32; 3], pub sun_alt: f32, pub mood: Mood, pub fade: f32,
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
     pub prism: f32, pub passing: [f32; 4], pub season: [f32; 4],
@@ -40,14 +42,14 @@ pub struct Frame {
 }
 
 /// per-scene textures (two scenes exist while crossfading)
-pub struct SceneTex { ap: Target, fol: Target, caus: Target, fade: Target, ap_key: Option<(i32, i32, bool, i32)>, fade_key: Option<i64> }
+pub struct SceneTex { ap: Target, fol: Target, caus: Target, fade: Target, tree: Target, dap: Target, ap_key: Option<(i32, i32, bool, i32)>, fade_key: Option<i64> }
 
 pub struct Renderer {
     pub gl: glow::Context,
     vao: glow::VertexArray,
     /// the wall material baked over one tile: relief, and colour with gloss; rebaked when the material changes
     plaster: Target, skin: Target, baked: Cell<i32>, p_surf: glow::Program,
-    p_ap: glow::Program, p_fol: glow::Program, p_caus: glow::Program, p_fade: glow::Program, p_comp: glow::Program,
+    p_ap: glow::Program, p_fol: glow::Program, p_caus: glow::Program, p_fade: glow::Program, p_tree: glow::Program, p_dap: glow::Program, p_comp: glow::Program,
 }
 
 unsafe fn program(gl: &glow::Context, name: &str, frag: &str) -> Result<glow::Program, String> {
@@ -95,6 +97,8 @@ impl Renderer {
             p_fol: program(&gl, "foliage", include_str!("../shaders/foliage.frag"))?,
             p_caus: program(&gl, "caustic", include_str!("../shaders/caustic.frag"))?,
             p_fade: program(&gl, "fade", include_str!("../shaders/fade.frag"))?,
+            p_tree: program(&gl, "tree", include_str!("../shaders/tree.frag"))?,
+            p_dap: program(&gl, "dapple", include_str!("../shaders/dapple.frag"))?,
             p_comp: program(&gl, "composite", include_str!("../shaders/composite.frag"))?,
             plaster: target(&gl, PLASTER, glow::R16F, true, true),
             skin: target(&gl, SKIN, glow::RGBA16F, true, true),
@@ -134,11 +138,13 @@ impl Renderer {
             fol: target(&self.gl, FOL, glow::R8, true, false),
             caus: target(&self.gl, CAUS, glow::R16F, true, false),
             fade: target(&self.gl, FADE, glow::R16F, false, false),
+            tree: target(&self.gl, TREE, glow::R8, true, false),
+            dap: target(&self.gl, DAP, glow::R16F, false, false),
             ap_key: None, fade_key: None,
         }
     }
     pub unsafe fn drop_scene(&self, s: SceneTex) {
-        for t in [s.ap, s.fol, s.caus, s.fade] { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
+        for t in [s.ap, s.fol, s.caus, s.fade, s.tree, s.dap] { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
     }
 
     unsafe fn uniforms(&self, p: glow::Program, f: &Frame) {
@@ -147,6 +153,7 @@ impl Renderer {
         gl.uniform_1_f32(u("time").as_ref(), f.time);
         gl.uniform_1_i32(u("style").as_ref(), f.style);
         gl.uniform_1_i32(u("plantType").as_ref(), f.plant);
+        gl.uniform_1_i32(u("treeType").as_ref(), f.tree);
         gl.uniform_1_i32(u("caustic").as_ref(), f.caustic);
         gl.uniform_1_f32(u("tilt").as_ref(), f.tilt);
         gl.uniform_3_f32_slice(u("sun").as_ref(), &f.sun);
@@ -204,6 +211,15 @@ impl Renderer {
             s.fade_key = Some(fk);
         }
         if f.plant > 0 { self.pass(self.p_fol, &s.fol, Some(f)); }
+        // the tree outside as it sways, then its shade as the wall gets it: every gap a little round sun
+        if f.tree > 0 {
+            self.pass(self.p_tree, &s.tree, Some(f));
+            gl.use_program(Some(self.p_dap));
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, Some(s.tree.tex));
+            gl.uniform_1_i32(gl.get_uniform_location(self.p_dap, "uTree").as_ref(), 0);
+            self.pass(self.p_dap, &s.dap, Some(f));
+        }
         let pool = f.caustic == 1 || f.caustic == 3;
         if pool && f.sun_alt > 0.0 { self.pass(self.p_caus, &s.caus, Some(f)); }
 
@@ -232,7 +248,7 @@ impl Renderer {
                        ("contrast", m.contrast), ("ambAmt", m.amb), ("fade", f.fade), ("lightK", f.light_k)] {
             gl.uniform_1_f32(u(n).as_ref(), v);
         }
-        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus), ("uFade", &s.fade)].iter().enumerate() {
+        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus), ("uFade", &s.fade), ("uDap", &s.dap)].iter().enumerate() {
             gl.active_texture(glow::TEXTURE0 + i as u32);
             gl.bind_texture(glow::TEXTURE_2D, Some(t.tex));
             gl.uniform_1_i32(u(n).as_ref(), i as i32);
@@ -249,10 +265,10 @@ impl Renderer {
     pub unsafe fn drop_target(&self, t: Target) { self.gl.delete_framebuffer(t.fb); self.gl.delete_texture(t.tex); }
 
     /// a small picture of one window's shape (the light it lets through, in its glass colours) or, with
-    /// `plant`, one plant's silhouette: RGBA, see-through where it blocks or is empty
+    /// `plant`, one plant's silhouette (or the tree's, with `tree` set in the frame): RGBA, see-through where it blocks or is empty
     pub unsafe fn glyph(&self, f: &Frame, plant: bool, w: i32, h: i32) -> Vec<u8> {
         let t = self.canvas(w, h);
-        self.pass(if plant { self.p_fol } else { self.p_ap }, &t, Some(f));
+        self.pass(if !plant { self.p_ap } else if f.tree > 0 { self.p_tree } else { self.p_fol }, &t, Some(f));
         let rgb = self.read_rgb(&t);
         self.drop_target(t);
         rgb.chunks(3).flat_map(|p| {

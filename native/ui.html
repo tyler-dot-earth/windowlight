@@ -145,6 +145,8 @@
   .leaf.on .pic { filter:none }
   .leaf .sil { position:absolute; inset:13%; background:#2b1d12; opacity:.82; filter:blur(.5px);
                -webkit-mask:var(--m) center/contain no-repeat; mask:var(--m) center/contain no-repeat }
+  .leaf.tree .sil { inset:7%; filter:blur(1.2px); opacity:.7 }
+  .leaf.tree[data-v="none"] .pic::after { content:"no tree" }
   .leaf[data-v="none"] .pic::after { content:"no plant"; font-size:10.5px; color:#0007; letter-spacing:.04em }
   .leaf[data-v="none"] .lbl { visibility:hidden }
   /* walls: paint chips with a soft patch of sun */
@@ -372,6 +374,7 @@
         <div class="group"><h3>paint</h3><div class="tiles walls" id="mood"></div></div>
         <div class="group"><h3>wall <small>what it's made of</small></h3><div class="tiles walls" id="material"></div></div>
         <div class="group"><h3>plant</h3><div class="tiles" id="plant"></div></div>
+        <div class="group"><h3>tree outside <small>its gaps throw little round suns</small></h3><div class="tiles" id="tree"></div></div>
         <div class="group"><h3>lamp <small>a light of its own</small></h3><div id="lamp"></div></div>
         <div class="group"><h3>caustics and extras</h3>
           <div class="extras"><div class="seg" id="caustic"></div>
@@ -644,7 +647,7 @@ async function poll() {
   $('status').replaceChildren(...pills.map(([h, c]) => { const p = el('span', 'pill' + (c ? ' ' + c : '')); p.innerHTML = h; return p; }));
 
   // now
-  const tag = $('tag'); tag.replaceChildren(el('b', '', L.style), [L.plant == 'none' ? 'no plant' : L.plant, L.mood, L.material && L.material != 'plaster' && L.material, L.lamp != 'none' && lampName(L.lamp)].filter(Boolean).join(' · '));
+  const tag = $('tag'); tag.replaceChildren(el('b', '', L.style), [L.plant == 'none' ? 'no plant' : L.plant, L.tree && L.tree != 'none' && L.tree + ' outside', L.mood, L.material && L.material != 'plaster' && L.material, L.lamp != 'none' && lampName(L.lamp)].filter(Boolean).join(' · '));
   $('preview').classList.toggle('zz', st.asleep);
   $('keep').classList.toggle('on', st.kept); $('keep').lastChild.textContent = st.kept ? 'Kept' : 'Keep';
   $('sleep').lastChild.textContent = st.asleep ? 'Wake' : 'Sleep'; $('sleep').querySelector('use').setAttribute('href', st.asleep ? '#i-sun' : '#i-moon');
@@ -656,6 +659,7 @@ async function poll() {
   chips('mood', C.mood, L.mood, { kind: 'tile paint', make: (b, n, i) => { tile(b, n); b.style.setProperty('--c', C.mood_wall[i]); } });
   chips('material', C.material, L.material, { kind: 'tile stuff', make: tile });
   chips('plant', C.plant, L.plant, { kind: 'tile leaf', make: tile });
+  chips('tree', C.tree, L.tree, { kind: 'tile leaf tree', make: tile });
   deck();
   if (G && G.material) document.documentElement.style.setProperty('--mat', `url(data:image/png;base64,${G.material[L.material]})`);
   chips('lamp', C.lamp, L.lamp, { make: lampChip, group: lampGroup });
@@ -744,8 +748,8 @@ function deck() {
     const p = b.firstChild, src = G.style[b.dataset.v];
     if (src && !p.firstChild) { const im = el('img'); im.src = 'data:image/png;base64,' + src; im.alt = ''; p.append(im); }
   }
-  for (const b of $('plant').children) {
-    const p = b.firstChild, src = G.plant[b.dataset.v];
+  for (const b of [...$('plant').children, ...$('tree').children]) {
+    const p = b.firstChild, src = (b.classList.contains('tree') ? G.tree : G.plant)[b.dataset.v];
     if (src && !p.firstChild) { const s = el('i', 'sil'); s.style.setProperty('--m', `url(data:image/png;base64,${src})`); p.append(s); }
   }
   for (const b of $('material').children) if (G.material) b.firstChild.style.setProperty('--sw', `url(data:image/png;base64,${G.material[b.dataset.v]})`);

@@ -160,6 +160,14 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Sun fade: the paint is paler and duller where the window's light falls over a year, a soft ghost of the patch that shows best when the light is elsewhere. It is worked out for the window, its angle and facing and the place, from 72 sun positions across six dates, and redrawn only when one of those changes.
 - Cost at 4K: about 1.6 ms per frame at the bench default.
 
+## Round thirteen: the world outside
+
+- A tree outside: `oak`, `birch`, `willow` or `pine`, picked on the page under the plants or with `--tree`. It stands about four units past the wall, so every gap in its leaves acts as a pinhole and throws a small round image of the sun (or the moon). Where gaps crowd, the images run into soft washes; haze makes every spot bigger and softer.
+- Each tree has its own character. The oak has a broad, lumpy crown on thick limbs. The birch is open and its small leaves shiver fast. The willow's strands hang from a high dome and swing in the wind. The pine has dark needled shelves.
+- Seasons: leaves are thin in spring, full in summer, thinning and amber in autumn. In winter only the bare limbs and twigs remain, apart from the pine. The tree sways with the wind and gusts, the top most.
+- Its shade also dims the glow round the patch and the shaft in the air.
+- Cost at 4K: about 0.1 ms more per frame with a tree (1.9 ms at the bench default with an oak).
+
 ## Setup with Nix
 
 - `nix develop` (or direnv, through `.envrc`) opens a dev shell with Rust, clippy, jq, Node, glpaper and Chromium, plus the GL and Wayland libraries on `LD_LIBRARY_PATH`. `wl.sh`, `run.sh` and `shot.sh` enter it themselves.

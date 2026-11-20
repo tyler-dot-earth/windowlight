@@ -1,7 +1,7 @@
 // every frame, full resolution: wall, light and grading, reading the baked textures
 in vec2 vUv; out vec4 fragColor;
 uniform vec2 res;
-uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus, uFade;
+uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus, uFade, uDap;
 uniform vec2 apTexel, folTexel;   // texels per unit
 uniform vec3 wallA, sunTint, shadeTint, nightTint;
 uniform float mottle, bumpAmt, expo, sat, contrast, ambAmt, fade, lightK;
@@ -147,6 +147,18 @@ void main(){
       float occB = softFol(vec2(0.95 - qb.x, qb.y)*0.9 + vec2(0.0, 0.12), (0.004 + 0.007*tb)*hz*0.9);
       trans *= mix(vec3(1.0), leafTint(), occB*0.8*(0.95 - 0.45*haze));
     }
+    // the tree outside: soft green shade, and through its gaps the little round suns
+    // (its broad shade also dims the glow round the patch and the shaft in the air)
+    vec3 tShade = vec3(1.0), treeWide = vec3(1.0);
+    if (treeType > 0) {
+      tShade = mix(mix(vec3(0.07, 0.1, 0.045), vec3(0.11, 0.14, 0.05), season.x), vec3(0.16, 0.09, 0.03), season.z*0.8);
+      tShade = mix(tShade, vec3(0.05), season.w*(treeType == 4 ? 0.0 : 1.0));
+      vec2 tu = (planeQ(p, pcw, n, ua, L, ns, D_TREE, 0.96) - TREE_MIN)/TREE_SIZE;
+      trans *= mix(tShade, vec3(1.0), texture(uDap, tu).r);
+      float wide = 0.0;
+      for (int i = 0; i < 4; i++) wide += texture(uDap, tu + 0.045*vec2(cos(float(i)*1.571 + 0.4), sin(float(i)*1.571 + 0.4))).r;
+      treeWide = mix(tShade, vec3(1.0), wide*0.25);
+    }
     if (caustic >= 2) trans *= softCarafe(q - WC, pen);
     trans *= prismT(q - WC, pen);
     if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
@@ -162,7 +174,7 @@ void main(){
     vec3 fringe = mix(vec3(1.0), vec3(1.14, 0.88, 0.64), edge*0.55*(isSun ? 1.0 : 0.0)*(1.0 - haze));
     vec2 lq = q - WC;
     float halo = sbox(lq, WH, pen*6.0 + 0.03)*0.07 + sbox(lq, WH, 0.18 + 0.25*haze)*(0.05 + 0.08*haze);
-    vec3 direct = lc*strength*(lit*trans*fringe*shade + halo*(0.4 + 0.6*flat_)*vec3(1.0, 0.9, 0.8));
+    vec3 direct = lc*strength*(lit*trans*fringe*shade + halo*treeWide*(0.4 + 0.6*flat_)*vec3(1.0, 0.9, 0.8));
     col += wall*direct;
     // gloss: the sun caught in each glazed tile or satin board that faces halfway between it and us
     if (skin.a > 0.0) {
@@ -213,6 +225,7 @@ void main(){
         vec3 a = textureLod(uAp, apUV(vec2(dot(ua, H), H.y)), 3.5).rgb;
         if (a.r + a.g + a.b < 0.02) continue;
         if (plantType > 0) a *= mix(vec3(1.0), leafTint(), textureLod(uFol, folUV(planeQ(P, pcw, n, ua, L, ns, D_PLANT, 0.8)), 3.5).r*0.9);
+        if (treeType > 0) a *= mix(tShade, vec3(1.0), texture(uDap, (planeQ(P, pcw, n, ua, L, ns, D_TREE, 0.96) - TREE_MIN)/TREE_SIZE).r);
         beam += a;
         float sc = 26.0 + fk*4.0;
         vec2 g = uv*sc + vec2(time*0.04 + fk*3.1 + 0.5*sin(time*0.09 + fk), -time*0.025*(1.0 + 0.3*fk));

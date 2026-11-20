@@ -5,6 +5,8 @@ pub const STYLES: [&str; 24] = ["window", "blinds", "lattice", "georgian", "arch
 /// the historical windows start here in STYLES
 pub const HISTORIC: usize = 11;
 pub const PLANTS: [&str; 5] = ["none", "ficus", "monstera", "palm", "olive"];
+/// a tree outside the window, far enough off that its gaps throw round little suns
+pub const TREES: [&str; 5] = ["none", "oak", "birch", "willow", "pine"];
 pub const MOODS: [&str; 8] = ["linen", "terracotta", "sage", "nocturne", "blush", "pewter", "overcast", "noir"];
 /// a mood by name; "concrete" was pewter's name before walls had materials of their own
 pub fn mood_index(v: &str) -> Option<usize> { MOODS.iter().position(|x| *x == if v == "concrete" { "pewter" } else { v }) }
@@ -54,10 +56,10 @@ impl Mood {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool, pub prism: bool, pub lamp: usize, pub material: usize }
+pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool, pub prism: bool, pub lamp: usize, pub material: usize, pub tree: usize }
 
 impl Default for Look {
-    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false, lamp: 0, material: 0 } }
+    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false, lamp: 0, material: 0, tree: 0 } }
 }
 
 fn pick(list: &[&str], v: &str) -> Result<usize, String> {
@@ -78,14 +80,15 @@ impl Look {
             "prism" | "suncatcher" => self.prism = matches!(v, "on" | "1" | "true" | "yes"),
             "lamp" => self.lamp = pick(&LAMPS, v)?,
             "material" | "wall" => self.material = pick(&MATERIALS, v)?,
+            "tree" => self.tree = pick(&TREES, v)?,
             _ => return Ok(false),
         }
         Ok(true)
     }
     pub fn flags(&self) -> String {
-        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {} --prism {} --lamp {} --material {}",
+        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {} --prism {} --lamp {} --material {} --tree {}",
             STYLES[self.style], PLANTS[self.plant], MOODS[self.mood], CAUSTICS[self.caustic], self.tilt, self.facing,
-            if self.rain { "on" } else { "off" }, if self.prism { "on" } else { "off" }, LAMPS[self.lamp], MATERIALS[self.material])
+            if self.rain { "on" } else { "off" }, if self.prism { "on" } else { "off" }, LAMPS[self.lamp], MATERIALS[self.material], TREES[self.tree])
     }
     /// a random look; facing stays unless `facing` is given
     pub fn random(rng: &mut Rng, facing: Option<f64>, base: &Look) -> Look {
@@ -96,6 +99,7 @@ impl Look {
             tilt: ((12.0 + rng.f() * 50.0) * if rng.f() < 0.5 { -1.0 } else { 1.0 }).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15, prism: rng.f() < 0.3,
             lamp: if rng.f() < 0.12 { 1 + rng.below(LAMPS.len() - 1) } else { 0 },
             material: if rng.f() < 0.4 { 0 } else { 1 + rng.below(MATERIALS.len() - 1) },
+            tree: if rng.f() < 0.6 { 0 } else { 1 + rng.below(TREES.len() - 1) },
         }
     }
     /// a look from flags like the ones flags() prints; unknown flags are ignored
