@@ -2,13 +2,16 @@
 precision highp float;
 precision highp int;
 uniform float time;
-uniform int style;      // 0 window 1 blinds 2 lattice 3 georgian 4 arch 5 shutters 6 sheer
+uniform int style;      // 0 window 1 blinds 2 lattice 3 georgian 4 arch 5 shutters 6 sheer 7 porthole 8 stained 9 slats 10 jali
 uniform int plantType;  // 0 none 1 ficus 2 monstera 3 palm 4 olive
 uniform int caustic;    // 0 none 1 pool 2 glass 3 both
 uniform float tilt;     // window plane angle against the wall, radians
 uniform vec3 sun;       // toward the sun, room frame
 uniform float sunAlt;
 uniform float haze;
+uniform float rain;      // 0..1 drops on the glass
+uniform float gust;      // 0..1 extra wind, kicked by desktop activity
+uniform vec4 cat;        // x position on the sill, pose (0 walk, 1 sit), leg phase, direction (+1/-1); direction 0 = no cat
 
 const float D_WIN = 0.55;
 const float D_PLANT = 1.05;
@@ -37,12 +40,141 @@ float rail(float x, float w){ return step(w, abs(x)); }   // 0 on a bar of half-
 float sbox(vec2 l, vec2 h, float r){ vec2 a = smoothstep(-h-r, -h+r, l) * (1.0 - smoothstep(h-r, h+r, l)); return a.x*a.y; }
 
 float curtainT(vec2 l){   // sheer curtain over part of the window, transmittance
-  float edge = -0.02 + 0.05*sin(l.y*2.0 + time*0.35) + 0.03*sin(time*0.21);
+  float edge = -0.02 + 0.05*sin(l.y*2.0 + time*0.35) + 0.03*sin(time*0.21) + gust*(0.07*sin(l.y*3.0 + time*2.3) + 0.04*sin(time*3.7));
   float cov = smoothstep(edge-0.015, edge+0.015, l.x);
-  float folds = 0.5+0.5*sin(l.x*48.0 + 1.6*sin(l.y*2.3 + time*0.4) + time*0.25);
+  float folds = 0.5+0.5*sin(l.x*48.0 + (1.6 + 2.0*gust)*sin(l.y*2.3 + time*(0.4 + 1.6*gust)) + time*0.25);
   float folds2 = 0.5+0.5*sin(l.x*19.0 - time*0.17 + l.y*1.4);
   float T = 0.18 + 0.42*folds*folds2 + 0.05*noise(l*vec2(40.0,3.0));
   return mix(1.0, T, cov);
+}
+
+// ---------------- rain on the glass: each drop is a little lens, so its shadow has a dark rim and a bright core
+float dropT(vec2 d, float r){
+  float x = length(d)/max(r, 1e-4);
+  if (x >= 1.0) return 1.0;
+  return mix(1.0, 0.06, smoothstep(0.35, 0.9, x)) + 0.9*(1.0 - smoothstep(0.0, 0.4, x));
+}
+float rainT(vec2 l){
+  if (rain <= 0.0) return 1.0;
+  float T = 1.0;
+  // beads that land, sit, and dry
+  for (int k = 0; k < 2; k++) {
+    float sc = k == 0 ? 11.0 : 19.0;
+    vec2 g = l*sc + float(k)*13.1, id = floor(g), f = fract(g) - 0.5;
+    vec2 h = vec2(hash(id + 1.7), hash(id + 5.3));
+    float life = fract(time*0.045 + hash(id + 9.1)*7.0);
+    float r = (0.12 + 0.2*h.y) * smoothstep(0.0, 0.03, life) * (1.0 - smoothstep(0.55, 1.0, life)) * step(hash(id + 2.9), rain*0.75);
+    T *= dropT(f - (h - 0.5)*0.5, r);
+  }
+  // drops that slide down and leave a wet trail of tiny beads
+  for (int k = 0; k < 2; k++) {
+    float w = k == 0 ? 0.075 : 0.11;
+    float cx = floor(l.x/w + float(k)*0.37);
+    float h1 = hash(vec2(cx, 3.0 + float(k))), h2 = hash(vec2(cx, 7.0 + float(k)));
+    if (h2 > rain) continue;
+    float span = 2.0*WH.y + 0.35;
+    float y = WH.y + 0.15 - fract(time*(0.035 + 0.06*h1) + h2*5.0)*span;
+    float x = (cx + 0.5 - float(k)*0.37)*w + (h1 - 0.5)*0.4*w + sin(y*23.0 + h1*9.0)*0.1*w;
+    vec2 d = l - vec2(x + sin(l.y*31.0 + h2*4.0)*0.003, y);
+    T *= dropT(d*vec2(1.0, 0.72), 0.02 + 0.012*h1);
+    float above = d.y;
+    float trail = step(0.0, above) * smoothstep(0.35, 0.0, above) * (1.0 - smoothstep(0.003, 0.008, abs(d.x)));
+    T *= 1.0 - 0.55*trail;
+    vec2 tb = vec2(d.x, (fract(above*30.0) - 0.5)/30.0);
+    T *= mix(1.0, dropT(tb, 0.007), step(0.0, above)*smoothstep(0.3, 0.02, above)*step(0.5, hash(vec2(cx, floor(above*30.0)))));
+  }
+  return T;
+}
+
+// ---------------- the cat that sometimes walks along the sill (window plane), 0 = blocked
+float sdEll(vec2 p, vec2 r){ return (length(p/r) - 1.0)*min(r.x, r.y); }
+float sdCap(vec2 p, vec2 a, vec2 b, float r){ return sdSeg(p, a, b) - r; }
+float sdTri(vec2 p, vec2 a, vec2 b, vec2 c){
+  vec2 e0 = b-a, e1 = c-b, e2 = a-c, v0 = p-a, v1 = p-b, v2 = p-c;
+  vec2 pq0 = v0 - e0*clamp(dot(v0,e0)/dot(e0,e0), 0.0, 1.0);
+  vec2 pq1 = v1 - e1*clamp(dot(v1,e1)/dot(e1,e1), 0.0, 1.0);
+  vec2 pq2 = v2 - e2*clamp(dot(v2,e2)/dot(e2,e2), 0.0, 1.0);
+  float s = sign(e0.x*e2.y - e0.y*e2.x);
+  vec2 d = min(min(vec2(dot(pq0,pq0), s*(v0.x*e0.y-v0.y*e0.x)), vec2(dot(pq1,pq1), s*(v1.x*e1.y-v1.y*e1.x))), vec2(dot(pq2,pq2), s*(v2.x*e2.y-v2.y*e2.x)));
+  return -sqrt(d.x)*sign(d.y);
+}
+float catHead(vec2 p, vec2 hc){
+  float d = length(p - hc) - 0.04;
+  d = min(d, sdEll(p - hc - vec2(0.03, -0.012), vec2(0.026, 0.019)));
+  d = min(d, sdTri(p, hc + vec2(-0.034, 0.018), hc + vec2(-0.012, 0.034), hc + vec2(-0.03, 0.072)));
+  d = min(d, sdTri(p, hc + vec2(0.0, 0.034), hc + vec2(0.024, 0.02), hc + vec2(0.016, 0.07)));
+  return d;
+}
+float catTail(vec2 p, vec2 base, float a0, float bend, float segLen){
+  float d = 1e3; vec2 a = base; float ang = a0;
+  for (int i = 0; i < 6; i++) {
+    vec2 b = a + segLen*vec2(cos(ang), sin(ang));
+    d = min(d, sdCap(p, a, b, 0.011 - 0.0008*float(i)));
+    a = b; ang += bend;
+  }
+  return d;
+}
+float catSD(vec2 p){
+  float ph = cat.z, swish = sin(time*1.7)*0.12 + sin(time*0.9)*0.08;
+  // walking
+  float bob = 0.004*sin(ph*2.0);
+  vec2 bc = vec2(0.0, 0.11 + bob);
+  float w = sdEll(p - bc, vec2(0.118, 0.048));
+  w = min(w, sdCap(p, bc + vec2(0.07, 0.015), vec2(0.12, 0.155 + bob), 0.03));
+  w = min(w, catHead(p, vec2(0.135, 0.17 + bob)));
+  for (int k = 0; k < 4; k++) {
+    float fk = float(k), side = k < 2 ? 1.0 : -1.0;
+    float s = sin(ph + fk*1.6 + (k < 2 ? 0.0 : 3.14159));
+    vec2 hip = vec2(side*0.075 + (mod(fk, 2.0) - 0.5)*0.01, 0.1 + bob);
+    vec2 foot = vec2(hip.x + 0.028*s, max(0.0, -s)*0.016);
+    w = min(w, sdCap(p, hip, foot, 0.0115));
+  }
+  w = min(w, catTail(p, bc + vec2(-0.105, 0.012), 1.9 + swish, -0.22, 0.034));
+  // sitting, facing the room a little, tail curled along the sill
+  vec2 sb = vec2(-0.005, 0.085);
+  float s = sdEll(p - sb, vec2(0.062, 0.088));
+  s = min(s, sdEll(p - vec2(-0.03, 0.045), vec2(0.072, 0.047)));
+  s = min(s, sdCap(p, vec2(0.03, 0.11), vec2(0.04, 0.004), 0.012));
+  s = min(s, sdCap(p, vec2(0.015, 0.11), vec2(0.022, 0.004), 0.011));
+  s = min(s, catHead(p, vec2(0.012, 0.205)));
+  s = min(s, catTail(p, vec2(-0.08, 0.012), -0.05, 0.08 + swish*0.6, 0.032));
+  return mix(w, s, smoothstep(0.0, 1.0, cat.y));
+}
+float catT(vec2 l){
+  if (cat.w == 0.0) return 1.0;
+  vec2 p = vec2((l.x - cat.x)*cat.w, l.y + WH.y);
+  if (abs(p.x) > 0.25 || p.y > 0.3) return 1.0;
+  return smoothstep(-0.002, 0.002, catSD(p));
+}
+
+// ---------------- stained glass: leaded panes in a few jewel colours, light takes their colour
+vec3 stained(vec2 l){
+  vec2 g = l*vec2(5.2, 4.6);
+  vec2 i = floor(g), f = fract(g);
+  float d1 = 8.0, d2 = 8.0; vec2 best = vec2(0.0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 c = vec2(float(x), float(y));
+    vec2 o = 0.5 + 0.38*sin(6.2831*vec2(hash(i + c), hash(i + c + 4.2)));
+    float d = length(c + o - f);
+    if (d < d1) { d2 = d1; d1 = d; best = i + c; } else if (d < d2) d2 = d;
+  }
+  float lead = smoothstep(0.035, 0.06, d2 - d1);
+  float h = hash(best + 11.0);
+  vec3 c = h < 0.22 ? vec3(0.95, 0.55, 0.12) : h < 0.4 ? vec3(0.75, 0.1, 0.12) : h < 0.55 ? vec3(0.12, 0.28, 0.8)
+         : h < 0.68 ? vec3(0.2, 0.62, 0.3) : h < 0.78 ? vec3(0.95, 0.85, 0.35) : vec3(0.92, 0.9, 0.85);
+  // a round rose in the middle
+  float rr = length(l - vec2(0.0, 0.12));
+  float petal = 0.5 + 0.5*cos(atan(l.y - 0.12, l.x)*8.0);
+  if (rr < 0.2) { c = mix(vec3(0.85, 0.15, 0.25), vec3(0.98, 0.7, 0.2), smoothstep(0.05, 0.16, rr*(0.8 + 0.3*petal))); lead = smoothstep(0.004, 0.009, abs(rr - 0.19)) * smoothstep(0.003, 0.007, abs(rr - 0.09)) * mix(1.0, smoothstep(0.0, 0.1, abs(petal - 0.5)), step(0.09, rr)); }
+  return c*lead*(0.85 + 0.15*noise(l*40.0));
+}
+
+float aperture(vec2 q);
+vec3 apertureC(vec2 q){
+  vec2 l = q - WC;
+  vec3 c = vec3(1.0);
+  if (style == 8) c = stained(l + (vec2(noise(q*6.0), noise(q*6.0+7.3)) - 0.5) * 0.007);
+  return c * aperture(q) * rainT(l) * catT(l);
 }
 
 float aperture(vec2 q){
@@ -58,7 +190,31 @@ float aperture(vec2 q){
     o *= mix(1.0, fan, step(0.0, a.y));
     return o;
   }
+  if (style == 7) {                      // ship's porthole: round glass in a thick ring with a hinge bar
+    float r = length(l - vec2(0.0, 0.08));
+    return (1.0 - smoothstep(0.33, 0.334, r)) * rail(l.y - 0.08, 0.006);
+  }
+  if (style == 8) {                      // stained glass under a pointed arch
+    float r = WH.x;
+    vec2 a = vec2(abs(l.x), l.y - (WH.y - r*1.2));
+    float arch = step(length(a + vec2(r*0.5, 0.0)), r*1.5) * step(0.0, a.y);
+    return max(inBox(l - vec2(0.0, -0.02 - 0.5*r*1.2*0.5), vec2(WH.x, WH.y - r*0.6)), arch) * inBox(l, WH + vec2(0.0, 0.2));
+  }
   o = inBox(l, WH);
+  if (style == 9) {                      // weathered vertical board slats with uneven gaps
+    float bw = 0.105, i = floor(l.x/bw);
+    float gap = 0.006 + 0.014*hash(vec2(i, 1.0)), xo = fract(l.x/bw)*bw;
+    float knot = step(length((l - vec2((i + 0.4 + 0.2*hash(vec2(i, 5.0)))*bw, (hash(vec2(i, 3.0)) - 0.5)*0.8))*vec2(1.0, 0.5)), 0.012 + 0.008*hash(vec2(i, 9.0)));
+    return o * max(step(xo, gap + 0.004*sin(l.y*9.0 + i)), knot*step(0.4, hash(vec2(i, 7.0)))) * rail(l.y - 0.3, 0.025) * rail(l.y + 0.32, 0.025);
+  }
+  if (style == 10) {                     // carved jali screen: eight-pointed stars and small crosses
+    vec2 g = l*7.5, f = fract(g) - 0.5;
+    vec2 r1 = abs(f), r2 = abs(mat2(0.7071,-0.7071,0.7071,0.7071)*f);
+    float star = step(max(max(r1.x, r1.y), max(r2.x, r2.y)*1.0), 0.27);
+    vec2 f2 = fract(g + 0.5) - 0.5;
+    float cross_ = step(min(abs(f2.x), abs(f2.y)), 0.035) * step(length(f2), 0.15);
+    return o * max(star, cross_) * rail(l.x, 0.012);
+  }
   if (style == 0) {                      // four-pane casement
     o *= rail(l.x, 0.018) * rail(l.y - 0.1, 0.018);
   } else if (style == 1) {               // venetian blinds, raised a little, with ladder cords
@@ -91,13 +247,14 @@ float vesica(vec2 d){                    // pointed leaf from x=0 (stalk) to x=1
   float vein = 1.0 - step(abs(d.y), 0.011) * step(0.08, x) * step(x, 0.8);
   return inside * vein;
 }
+float gustSway(float seed){ return gust*(0.55*sin(time*2.1 + seed) + 0.3*sin(time*4.7 + seed*1.7) + 0.15*sin(time*8.3 + seed*2.3)); }
 float ficus(vec2 p){
-  p.x += (sin(time*0.6)*0.012 + sin(time*1.7 + p.y*3.0)*0.004) * p.y;
+  p.x += (sin(time*0.6)*0.012 + sin(time*1.7 + p.y*3.0)*0.004 + gustSway(p.y*2.0)*0.05) * p.y;
   float b = step(abs(p.x - 0.42 - 0.06*sin(p.y*2.5)), 0.008) * step(p.y, 1.2) * step(0.1, p.y);
   for (int i = 0; i < 10; i++) {
     float fi = float(i), y = 0.22 + fi*0.1, side = mod(fi, 2.0)*2.0 - 1.0;
     vec2 base = vec2(0.42 + 0.06*sin(y*2.5), y);
-    float th = PI*0.5 - side*(0.85 + 0.35*hash(vec2(fi, 2.0))) + sin(time*(0.9 + fi*0.13) + fi)*0.06;
+    float th = PI*0.5 - side*(0.85 + 0.35*hash(vec2(fi, 2.0))) + sin(time*(0.9 + fi*0.13) + fi)*0.06 + gustSway(fi*1.3)*0.45;
     b = max(b, vesica(rot(th)*(p - base) / (0.27 + 0.09*hash(vec2(fi, 3.0)))));
   }
   return b;
@@ -114,7 +271,7 @@ float monLeaf(vec2 p, vec2 base, float ang, float sz){
   return body * (1.0 - notch) * (1.0 - slit) * (1.0 - hole);
 }
 float monstera(vec2 p){
-  p.x += (sin(time*0.5)*0.01 + sin(time*1.3 + p.y*2.0)*0.003) * p.y;
+  p.x += (sin(time*0.5)*0.01 + sin(time*1.3 + p.y*2.0)*0.003 + gustSway(p.y)*0.04) * p.y;
   vec2 root = vec2(0.42, -0.45);
   float b = 0.0;
   for (int i = 0; i < 4; i++) {
@@ -122,7 +279,7 @@ float monstera(vec2 p){
     vec2 base = i==0 ? vec2(0.08, 0.78) : i==1 ? vec2(0.36, 0.98) : i==2 ? vec2(0.16, 0.36) : vec2(0.48, 0.5);
     float ang = i==0 ? 2.35 : i==1 ? 0.95 : i==2 ? 3.45 : -0.15;
     float sz = i==0 ? 0.42 : i==1 ? 0.4 : i==2 ? 0.36 : 0.4;
-    ang += sin(time*0.8 + fi*1.7)*0.035;
+    ang += sin(time*0.8 + fi*1.7)*0.035 + gustSway(fi*2.1)*0.18;
     b = max(b, monLeaf(p, base, ang, sz));
     b = max(b, step(sdSeg(p, root, base), 0.008));
   }
@@ -142,7 +299,7 @@ float frond(vec2 p, vec2 base, float ang, float len, float curl){
 }
 float palm(vec2 p){
   vec2 base = vec2(0.22, 1.42);
-  float s = sin(time*0.45)*0.03 + sin(time*1.1)*0.01;
+  float s = sin(time*0.45)*0.03 + sin(time*1.1)*0.01 + gustSway(0.0)*0.14;
   float b = frond(p, base, -0.55 + s, 1.25, 0.32);
   b = max(b, frond(p, base, -1.15 + s*0.8, 1.35, 0.2));
   b = max(b, frond(p, base, -2.05 + s*1.2, 1.2, -0.25));
@@ -157,7 +314,7 @@ float olBranch(vec2 p, vec2 base, float ang, float len, float bend, float seed){
     float i = ci + float(k), uc = (i + 0.5)*sp;
     float ok = step(0.0, uc) * step(uc, len);
     float side = mod(i, 2.0)*2.0 - 1.0;
-    float a = side*(0.55 + 0.35*hash(vec2(i, seed))) + sin(time*1.1 + i*0.7 + seed)*0.08;
+    float a = side*(0.55 + 0.35*hash(vec2(i, seed))) + sin(time*1.1 + i*0.7 + seed)*0.08 + gustSway(i*0.9 + seed)*0.5;
     vec2 ld = rot(a)*vec2(u - uc, v);
     float Ll = 0.12 + 0.035*hash(vec2(seed, i));
     float x = ld.x/Ll;
@@ -166,7 +323,7 @@ float olBranch(vec2 p, vec2 base, float ang, float len, float bend, float seed){
   return b;
 }
 float olive(vec2 p){
-  float s = sin(time*0.4)*0.02;
+  float s = sin(time*0.4)*0.02 + gustSway(1.0)*0.1;
   float b = olBranch(p, vec2(-0.45, 1.45), -0.55 + s, 1.3, 0.12, 1.0);
   b = max(b, olBranch(p, vec2(-0.4, 0.95), -0.18 + s*1.3, 1.05, 0.18, 2.0));
   b = max(b, olBranch(p, vec2(1.0, 1.55), -2.45 - s, 0.95, -0.15, 3.0));

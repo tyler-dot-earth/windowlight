@@ -34,3 +34,31 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - `./wl.sh sample 24 dir` renders 24 random looks in daylight with `dir/looks.txt` holding each one's flags, and `./wl.sh shot out.png --size 3840x2160 ...` renders one still
   - `./wl.sh bench` times frames at 4K
 - `native/sheet-random.jpg` is a 24-look sample sheet
+
+## native (round five)
+
+- Control page at <http://127.0.0.1:7417/> while `./wl.sh run` is up (`--ui PORT` or `--ui off`):
+  - It has buttons for every window, plant, mood and caustic, plus a rain toggle and tilt and facing sliders.
+  - It also has shuffle, time-lapse and cat-interval pickers, and keep, sleep and real-sun buttons.
+  - It answers only requests addressed to localhost and refuses commands sent from other sites.
+- Four more windows: `porthole`, `stained` (coloured light through jewel panes and a rose), `slats` (boards with knots) and `jali` (a carved star screen).
+- Rain on the glass, set with `--rain on` or `ctl rain on`:
+  - Each bead throws a dark-rimmed shadow with a bright core.
+  - Drops slide down and leave trails, and rain softens the light a little.
+  - `--random` turns rain on 15% of the time.
+- Breeze: niri activity blows wind through the leaves and the sheer curtain.
+  - Switching workspace gusts hardest, then opening, closing and focusing windows.
+  - `--breeze off` turns it off, and `ctl gust 0.8` sends a gust by hand.
+- The cat walks along the sill, usually sits a while, then walks off.
+  - It comes about every 10 minutes at random, starting a minute or three after launch.
+  - `--cat 30m` or `--cat off` changes that, and `ctl cat` calls it now.
+- Favourites:
+  - `ctl keep` saves the current look to `native/favourites.txt`, and `ctl drop` removes it.
+  - `ctl favs` lists them, and `ctl fav 3` shows one, turned toward the light if it would be dark as saved.
+  - `--pool favourites` (or `ctl set pool=favourites`) makes shuffles draw only from them.
+- Transitions replace the crossfade:
+  - Mood, tilt, facing and rain glide in place.
+  - A new window, plant or caustic waits behind a passing cloud: the light fades and softens, the scene swaps while it's dark, and the light comes back (about 3.5 s).
+  - A shuffle that has to jump the clock to a sunny moment also hides the jump behind the cloud.
+- Cost at 4K is still small: 1.1 to 1.8 ms per frame. Rain and a walking cat redraw the window texture each frame, which adds about 0.5 ms.
+- `./wl.sh headless --ui 7899 --breeze on` is the offscreen test driver. It serves the page and follows niri while it `wait`s, and `--size` sets its shot size.

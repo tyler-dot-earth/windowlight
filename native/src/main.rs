@@ -10,6 +10,7 @@ mod gfx;
 mod ipc;
 mod look;
 mod sun;
+mod ui;
 mod wl;
 
 use app::{App, Opts};
@@ -18,10 +19,10 @@ use std::time::Instant;
 
 fn usage() -> ! {
     eprintln!("usage: windowlight run|shot OUT.png|sample N DIR|bench|ctl WORDS...\n\
-  look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --random\n\
+  look:   --style S --plant P --mood M --caustic C --tilt DEG --facing DEG --rain on|off --random\n\
   place:  --lat X --lon Y\n\
   time:   --at 2026-11-19T11:00 --speed X --anim SECONDS\n\
-  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n\
+  live:   --output DP-2 --fps 30 --scale 1.0 --workspaces linen,sage,... --shuffle 20s|5m --timelapse day/2m|full/5m|07:00-18:00/90s\n          --pool all|favourites --cat 10m|off --breeze on|off --ui 7417|off\n\
   stills: --size 1920x1080 --frames 120 (bench)");
     std::process::exit(2)
 }
@@ -35,12 +36,13 @@ fn parse_at(s: &str) -> f64 {
     chrono::Local.from_local_datetime(&ndt).earliest().expect("local time").timestamp_millis() as f64
 }
 
-struct Cli { opts: Opts, pos: Vec<String>, random: bool, frames: usize, size_set: bool }
+struct Cli { opts: Opts, pos: Vec<String>, random: bool, frames: usize, size_set: bool, headless_ui: Option<u16>, headless_breeze: bool }
 
 fn parse(args: &[String]) -> Cli {
     let mut o = Opts {
         lat: 37.77, lon: -122.42, look: Look::default(), speed: 1.0, at_ms: None, anim: 0.0,
         fps: 30.0, scale: 1.0, output: "DP-2".into(), workspaces: vec![], shuffle_secs: None, size: (1920, 1080), lapse: None,
+        cat_secs: Some(600.0), pool_favs: false, breeze: true, ui_port: Some(7417),
     };
     let (mut pos, mut random, mut frames, mut size_set) = (vec![], false, 120, false);
     let mut i = 0;
@@ -62,6 +64,10 @@ fn parse(args: &[String]) -> Cli {
             "at" => o.at_ms = Some(parse_at(v)),
             "output" => o.output = v.clone(),
             "timelapse" => o.lapse = Some(v.clone()),
+            "cat" => o.cat_secs = app::parse_secs(v).unwrap_or_else(|| { eprintln!("--cat wants 10m, 1h or off"); std::process::exit(2) }),
+            "pool" => o.pool_favs = matches!(v.as_str(), "favourites" | "favorites" | "favs"),
+            "breeze" => o.breeze = v != "off",
+            "ui" => o.ui_port = if v == "off" { None } else { Some(v.parse().unwrap_or_else(|_| usage())) },
             "size" => {
                 let (w, h) = v.split_once('x').unwrap_or_else(|| usage());
                 o.size = (w.parse().unwrap_or_else(|_| usage()), h.parse().unwrap_or_else(|_| usage()));
@@ -81,7 +87,10 @@ fn parse(args: &[String]) -> Cli {
         }
         i += 2;
     }
-    Cli { opts: o, pos, random, frames, size_set }
+    // only the live wallpaper serves the page by default; the headless driver serves it when --ui is given
+    let headless_ui = args.iter().any(|a| a == "--ui").then_some(o.ui_port).flatten();
+    let headless_breeze = args.windows(2).any(|w| w[0] == "--breeze" && w[1] != "off");
+    Cli { opts: o, pos, random, frames, size_set, headless_ui, headless_breeze }
 }
 
 fn write_png(path: &str, w: i32, h: i32, rgb: &[u8]) {
@@ -155,18 +164,34 @@ fn main() {
                 std::fs::write(format!("{dir}/looks.txt"), log).unwrap();
             });
         }
-        // offscreen test driver: one command per stdin line, "wait SECONDS" keeps rendering; replies go to stdout
+        // offscreen test driver: one command per stdin line, "wait SECONDS" keeps rendering (and serves the
+        // control page when --ui is given); replies go to stdout
         "headless" => {
+            let rx = (cli.headless_ui.is_some() || cli.headless_breeze).then(|| {
+                let (tx, rx) = std::sync::mpsc::channel::<ipc::Cmd>();
+                if let Some(port) = cli.headless_ui { ui::serve(port, tx.clone()); }
+                if cli.headless_breeze { ipc::follow_niri(cli.opts.output.clone(), true, tx); }
+                rx
+            });
+            let (hw, hh) = if cli.size_set { cli.opts.size } else { (320, 180) };
             offscreen(&cli.opts, |r| unsafe {
-                let c = r.canvas(320, 180);
+                let c = r.canvas(hw, hh);
                 let mut a = App::new(cli.opts.clone(), r);
                 for line in std::io::stdin().lines().map_while(Result::ok) {
                     if let Some(s) = line.strip_prefix("wait ") {
                         let end = Instant::now() + std::time::Duration::from_secs_f64(s.trim().parse().unwrap_or(1.0));
-                        while Instant::now() < end { a.render(r, Some(c.fb), 320, 180); std::thread::sleep(std::time::Duration::from_millis(33)); }
+                        while Instant::now() < end {
+                            while let Some(c) = rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                                println!("ui> {}", c.line);
+                                let reply = a.command(r, &c.line);
+                                if let Some(t) = c.reply { let _ = t.send(reply); }
+                            }
+                            a.render(r, Some(c.fb), hw, hh);
+                            std::thread::sleep(std::time::Duration::from_millis(33));
+                        }
                     } else if let Some(p) = line.strip_prefix("shot ") {
-                        a.render(r, Some(c.fb), 320, 180);
-                        write_png(p.trim(), 320, 180, &r.read_rgb(&c));
+                        a.render(r, Some(c.fb), hw, hh);
+                        write_png(p.trim(), hw, hh, &r.read_rgb(&c));
                     } else {
                         println!("> {line}\n{}", a.command(r, &line));
                     }

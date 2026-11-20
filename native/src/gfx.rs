@@ -20,10 +20,11 @@ pub struct Target { pub tex: glow::Texture, pub fb: glow::Framebuffer, pub w: i3
 pub struct Frame {
     pub time: f32, pub style: i32, pub plant: i32, pub caustic: i32, pub tilt: f32,
     pub sun: [f32; 3], pub sun_alt: f32, pub mood: Mood, pub fade: f32,
+    pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
 }
 
 /// per-scene textures (two scenes exist while crossfading)
-pub struct SceneTex { ap: Target, fol: Target, caus: Target, ap_key: Option<(i32, i32)> }
+pub struct SceneTex { ap: Target, fol: Target, caus: Target, ap_key: Option<(i32, i32, bool)> }
 
 pub struct Renderer {
     pub gl: glow::Context,
@@ -87,7 +88,7 @@ impl Renderer {
 
     pub unsafe fn scene_tex(&self) -> SceneTex {
         SceneTex {
-            ap: target(&self.gl, AP, glow::R8, true, false),
+            ap: target(&self.gl, AP, glow::RGBA16F, true, false),
             fol: target(&self.gl, FOL, glow::R8, true, false),
             caus: target(&self.gl, CAUS, glow::R16F, true, false),
             ap_key: None,
@@ -108,6 +109,9 @@ impl Renderer {
         gl.uniform_3_f32_slice(u("sun").as_ref(), &f.sun);
         gl.uniform_1_f32(u("sunAlt").as_ref(), f.sun_alt);
         gl.uniform_1_f32(u("haze").as_ref(), f.mood.haze);
+        gl.uniform_1_f32(u("rain").as_ref(), f.rain);
+        gl.uniform_1_f32(u("gust").as_ref(), f.gust);
+        gl.uniform_4_f32_slice(u("cat").as_ref(), &f.cat);
     }
 
     /// draw a fullscreen pass of `p` into `t` (or the given framebuffer), then rebuild mips
@@ -127,9 +131,11 @@ impl Renderer {
     /// render one scene into `fb` (None = the window), blended over what's there by `alpha`
     pub unsafe fn draw(&self, s: &mut SceneTex, f: &Frame, fb: Option<glow::Framebuffer>, w: i32, h: i32, alpha: f32) {
         let gl = &self.gl;
-        // window shape: only when the style or tilt changes, or every frame for the moving curtain
-        let key = (f.style, (f.tilt * 1000.0) as i32);
-        if s.ap_key != Some(key) || f.style == 6 { self.pass(self.p_ap, &s.ap, Some(f)); s.ap_key = Some(key); }
+        // window light: only when the style or tilt changes, or every frame while something on the glass moves
+        // (the sheer curtain, rain, or the cat)
+        let moving = f.cat[3] != 0.0;
+        let key = (f.style, (f.tilt * 1000.0) as i32, moving);
+        if s.ap_key != Some(key) || f.style == 6 || f.rain > 0.0 || moving { self.pass(self.p_ap, &s.ap, Some(f)); s.ap_key = Some(key); }
         if f.plant > 0 { self.pass(self.p_fol, &s.fol, Some(f)); }
         let pool = f.caustic == 1 || f.caustic == 3;
         if pool && f.sun_alt > 0.0 { self.pass(self.p_caus, &s.caus, Some(f)); }
@@ -156,7 +162,7 @@ impl Renderer {
         gl.uniform_3_f32_slice(u("shadeTint").as_ref(), &m.shade_tint);
         gl.uniform_3_f32_slice(u("nightTint").as_ref(), &m.night_tint);
         for (n, v) in [("mottle", m.mottle), ("bumpAmt", m.bump), ("expo", m.expo), ("sat", m.sat),
-                       ("contrast", m.contrast), ("ambAmt", m.amb), ("fade", f.fade)] {
+                       ("contrast", m.contrast), ("ambAmt", m.amb), ("fade", f.fade), ("lightK", f.light_k)] {
             gl.uniform_1_f32(u(n).as_ref(), v);
         }
         for (i, (n, t)) in [("uPlaster", &self.plaster), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus)].iter().enumerate() {

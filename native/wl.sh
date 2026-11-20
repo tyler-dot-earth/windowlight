@@ -7,7 +7,7 @@ export CARGO_HOME="$here/.cargo-home" CARGO_TARGET_DIR="$here/target"
 libs=$(nix build --no-link --print-out-paths nixpkgs#libglvnd nixpkgs#wayland | grep -v -- '-dev$' | sed 's|$|/lib|' | paste -sd:)
 export LD_LIBRARY_PATH="$libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 bin="$CARGO_TARGET_DIR/release/windowlight"
-if [[ "${1:-}" == build || ! -x "$bin" || -n "$(find "$here/src" "$here/shaders" "$here/Cargo.toml" -newer "$bin" 2>/dev/null | head -1)" ]]; then
+if [[ "${1:-}" == build || ! -x "$bin" || -n "$(find "$here/src" "$here/shaders" "$here/Cargo.toml" "$here/ui.html" -newer "$bin" 2>/dev/null | head -1)" ]]; then
   (cd "$here" && nix shell nixpkgs#cargo nixpkgs#rustc nixpkgs#gcc -c cargo build --release -q)
 fi
 [[ "${1:-}" == build ]] && exit 0

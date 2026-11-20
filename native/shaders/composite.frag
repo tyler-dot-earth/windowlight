@@ -4,17 +4,17 @@ uniform vec2 res;
 uniform sampler2D uPlaster, uAp, uFol, uCaus;
 uniform vec2 apTexel, folTexel;   // texels per unit
 uniform vec3 wallA, sunTint, shadeTint, nightTint;
-uniform float mottle, bumpAmt, expo, sat, contrast, ambAmt, fade;
+uniform float mottle, bumpAmt, expo, sat, contrast, ambAmt, fade, lightK;
 
 float jit;
 vec2 apUV(vec2 q){ return (q - AP_MIN)/AP_SIZE; }
 vec2 folUV(vec2 q){ return (q - FOL_MIN)/FOL_SIZE; }
 // penumbra: six rotated taps over the blur disk, each from a pre-blurred mip level
-float softAp(vec2 q, float r){
-  float lod = max(log2(r*apTexel.x*0.55), 0.0), s = 0.0;
+vec3 softAp(vec2 q, float r){
+  float lod = max(log2(r*apTexel.x*0.55), 0.0); vec3 s = vec3(0.0);
   for (int i = 0; i < 6; i++){
     float a = float(i)*2.39996 + jit, rr = sqrt((float(i) + .5)/6.0)*r;
-    s += textureLod(uAp, apUV(q + rr*vec2(cos(a), sin(a))), lod).r;
+    s += textureLod(uAp, apUV(q + rr*vec2(cos(a), sin(a))), lod).rgb;
   }
   return s/6.0;
 }
@@ -66,7 +66,8 @@ void main(){
     qp -= (vec2(dot(ua, hc), hc.y) - WC)*0.8;
     float hz = 1.0 + 7.0*haze;
     float pen = (0.004 + 0.004*tw)*hz;
-    float lit = softAp(q, pen);
+    vec3 lit = softAp(q, pen);
+    float litM = clamp(dot(lit, vec3(0.3333)), 0.0, 1.0);
     vec3 trans = vec3(1.0);
     if (plantType > 0) {
       float occ = softFol(qp, (0.003 + 0.006*tp)*hz);
@@ -79,12 +80,12 @@ void main(){
     }
     if (caustic >= 2) trans *= carafe(q - WC, pen);
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
-    float strength = E*smoothstep(0.0, 0.08, alt);
+    float strength = E*smoothstep(0.0, 0.08, alt)*lightK;
     vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
     float flat_ = max(L.z, 0.0);
     float bumpR = clamp(max(dot(nb, L), 0.0)/max(flat_, 0.05), 0.0, 3.0);
     float shade = (0.4 + 0.6*flat_)*mix(1.0, bumpR, 0.75);
-    float edge = 4.0*lit*(1.0 - lit);
+    float edge = 4.0*litM*(1.0 - litM);
     vec3 fringe = mix(vec3(1.0), vec3(1.14, 0.88, 0.64), edge*0.55*(isSun ? 1.0 : 0.0)*(1.0 - haze));
     vec2 lq = q - WC;
     float halo = sbox(lq, WH, pen*6.0 + 0.03)*0.07 + sbox(lq, WH, 0.18 + 0.25*haze)*(0.05 + 0.08*haze);
@@ -99,7 +100,7 @@ void main(){
       vec2 wq = wp.xz*3.0;
       vec2 wob = (vec2(noise(wq*0.5 + vec2(time*0.3, 0.0)), noise(wq*0.5 + vec2(3.7, time*0.27))) - 0.5)*0.06;
       vec2 qr = vec2(dot(ua, hr), hr.y);
-      float litR = softAp(qr + wob, pen*1.4 + 0.006);
+      vec3 litR = softAp(qr + wob, pen*1.4 + 0.006);
       float cz = texture(uCaus, apUV(qr + wob)).r;
       float fres = 0.22 + 0.4*pow(1.0 - sin(alt), 3.0);
       col += wall*lc*strength*litR*fres*(0.2 + 1.5*cz)*vec3(0.94, 1.0, 1.02)*(1.0 - 0.7*haze);

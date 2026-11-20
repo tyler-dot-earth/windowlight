@@ -47,18 +47,19 @@ pub fn listen() -> Result<(Sender<Cmd>, Receiver<Cmd>), String> {
 
 pub fn cleanup() { let _ = std::fs::remove_file(sock_path()); }
 
-/// follow niri's event stream and send "workspace N" (N = 1-based index on `output`) when it changes
-pub fn follow_niri(output: String, tx: Sender<Cmd>) {
-    let Ok(path) = std::env::var("NIRI_SOCKET") else { eprintln!("NIRI_SOCKET isn't set; workspace moods are off"); return };
+/// follow niri's event stream: send "workspace N" (N = 1-based index on `output`) when it changes, and
+/// "gust X" for desktop activity (switching workspaces, opening, closing and focusing windows) when `breeze` is on
+pub fn follow_niri(output: String, breeze: bool, tx: Sender<Cmd>) {
+    let Ok(path) = std::env::var("NIRI_SOCKET") else { eprintln!("NIRI_SOCKET isn't set; workspace moods and breeze are off"); return };
     std::thread::spawn(move || {
         let Ok(mut s) = UnixStream::connect(&path) else { eprintln!("can't reach niri at {path}"); return };
         if writeln!(s, "\"EventStream\"").is_err() { return; }
         // workspace id -> (idx, output)
         let mut ws: std::collections::HashMap<u64, (u64, String)> = Default::default();
+        let mut windows: std::collections::HashSet<u64> = Default::default();
         let mut last = 0u64;
-        let mut emit = |idx: u64| {
-            if idx != last { last = idx; let _ = tx.send(Cmd { line: format!("workspace {idx}"), reply: None }); }
-        };
+        let send = |line: String| { let _ = tx.send(Cmd { line, reply: None }); };
+        let gust = |x: f64| if breeze { send(format!("gust {x}")) };
         for line in BufReader::new(s).lines().map_while(Result::ok) {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
             if let Some(list) = v.pointer("/WorkspacesChanged/workspaces").and_then(|x| x.as_array()) {
@@ -66,11 +67,23 @@ pub fn follow_niri(output: String, tx: Sender<Cmd>) {
                 for w in list {
                     let (Some(id), Some(idx)) = (w["id"].as_u64(), w["idx"].as_u64()) else { continue };
                     let out = w["output"].as_str().unwrap_or("").to_string();
-                    if out == output && w["is_active"].as_bool() == Some(true) { emit(idx); }
+                    if out == output && w["is_active"].as_bool() == Some(true) && idx != last { last = idx; send(format!("workspace {idx}")); }
                     ws.insert(id, (idx, out));
                 }
             } else if let Some(id) = v.pointer("/WorkspaceActivated/id").and_then(|x| x.as_u64()) {
-                if let Some((idx, out)) = ws.get(&id) { if *out == output { emit(*idx); } }
+                if let Some((idx, out)) = ws.get(&id) {
+                    if *out == output && *idx != last { last = *idx; send(format!("workspace {idx}")); gust(0.7); }
+                }
+            } else if let Some(list) = v.pointer("/WindowsChanged/windows").and_then(|x| x.as_array()) {
+                // the full list arrives first; no wind for windows that were already there
+                windows = list.iter().filter_map(|w| w["id"].as_u64()).collect();
+            } else if let Some(id) = v.pointer("/WindowOpenedOrChanged/window/id").and_then(|x| x.as_u64()) {
+                if windows.insert(id) { gust(0.6); }
+            } else if let Some(id) = v.pointer("/WindowClosed/id").and_then(|x| x.as_u64()) {
+                windows.remove(&id);
+                gust(0.5);
+            } else if v.pointer("/WindowFocusChanged/id").is_some_and(|x| !x.is_null()) {
+                gust(0.25);
             }
         }
     });

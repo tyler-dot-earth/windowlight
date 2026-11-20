@@ -50,3 +50,10 @@ pub fn sunny_moment(rng: &mut crate::look::Rng, ms: f64, lat: f64, lon: f64) -> 
 pub fn facing_for(rng: &mut crate::look::Rng, ms: f64, lat: f64, lon: f64) -> f64 {
     (light(ms, lat, lon).1 / RAD + (rng.f() - 0.5) * 80.0).rem_euclid(360.0)
 }
+
+/// does a window facing `facing_deg` catch enough light at `ms` to show a patch?
+pub fn lets_in(ms: f64, lat: f64, lon: f64, facing_deg: f64) -> bool {
+    let (alt, az) = light(ms, lat, lon);
+    let off = (az / RAD - facing_deg + 540.0).rem_euclid(360.0) - 180.0;
+    alt > 8.0 * RAD && off.abs() < 65.0
+}

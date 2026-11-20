@@ -1,5 +1,5 @@
 // What a scene looks like: window, plant, mood, caustics, geometry. Plus the mood palette and random picks.
-pub const STYLES: [&str; 7] = ["window", "blinds", "lattice", "georgian", "arch", "shutters", "sheer"];
+pub const STYLES: [&str; 11] = ["window", "blinds", "lattice", "georgian", "arch", "shutters", "sheer", "porthole", "stained", "slats", "jali"];
 pub const PLANTS: [&str; 5] = ["none", "ficus", "monstera", "palm", "olive"];
 pub const MOODS: [&str; 8] = ["linen", "terracotta", "sage", "nocturne", "blush", "concrete", "overcast", "noir"];
 pub const CAUSTICS: [&str; 4] = ["none", "pool", "glass", "both"];
@@ -42,10 +42,10 @@ impl Mood {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64 }
+pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool }
 
 impl Default for Look {
-    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0 } }
+    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false } }
 }
 
 fn pick(list: &[&str], v: &str) -> Result<usize, String> {
@@ -62,13 +62,15 @@ impl Look {
             "caustic" => self.caustic = pick(&CAUSTICS, v)?,
             "tilt" => self.tilt = v.parse().map_err(|_| format!("bad tilt {v}"))?,
             "facing" => self.facing = v.parse().map_err(|_| format!("bad facing {v}"))?,
+            "rain" => self.rain = matches!(v, "on" | "1" | "true" | "yes"),
             _ => return Ok(false),
         }
         Ok(true)
     }
     pub fn flags(&self) -> String {
-        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0}",
-            STYLES[self.style], PLANTS[self.plant], MOODS[self.mood], CAUSTICS[self.caustic], self.tilt, self.facing)
+        format!("--style {} --plant {} --mood {} --caustic {} --tilt {:.0} --facing {:.0} --rain {}",
+            STYLES[self.style], PLANTS[self.plant], MOODS[self.mood], CAUSTICS[self.caustic], self.tilt, self.facing,
+            if self.rain { "on" } else { "off" })
     }
     /// a random look; facing stays unless `facing` is given
     pub fn random(rng: &mut Rng, facing: Option<f64>, base: &Look) -> Look {
@@ -76,8 +78,18 @@ impl Look {
         let plant = if rng.f() < 0.12 { 0 } else { 1 + rng.below(4) };
         Look {
             style: rng.below(STYLES.len()), plant, mood: rng.below(MOODS.len()), caustic,
-            tilt: (12.0 + rng.f() * 50.0).round(), facing: facing.unwrap_or(base.facing).round(),
+            tilt: (12.0 + rng.f() * 50.0).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15,
         }
+    }
+    /// a look from flags like the ones flags() prints; unknown flags are ignored
+    pub fn from_flags(line: &str) -> Option<Look> {
+        let mut l = Look::default();
+        let w: Vec<&str> = line.split_whitespace().collect();
+        let mut any = false;
+        for p in w.windows(2) {
+            if let Some(k) = p[0].strip_prefix("--") { if l.set(k, p[1]) == Ok(true) { any = true; } }
+        }
+        any.then_some(l)
     }
 }
 

@@ -94,7 +94,8 @@ fn run_inner(o: Opts) -> Result<(), String> {
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
     }
     let (tx, rx) = ipc::listen()?;
-    if !o.workspaces.is_empty() { ipc::follow_niri(o.output.clone(), tx.clone()); }
+    if !o.workspaces.is_empty() || o.breeze { ipc::follow_niri(o.output.clone(), o.breeze, tx.clone()); }
+    if let Some(port) = o.ui_port { crate::ui::serve(port, tx.clone()); }
     eprintln!("windowlight: control socket {}", ipc::sock_path());
     let frame_dt = |a: &App| Duration::from_secs_f64(1.0 / a.o.fps);
     let mut a = unsafe { App::new(o, &r) };

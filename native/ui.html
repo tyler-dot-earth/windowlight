@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>windowlight</title>
+<style>
+  :root { --bg:#211d19; --card:#2c2621; --ink:#f1e6d6; --dim:#a89a88; --sun:#f0b45a; --line:#43392f; }
+  * { box-sizing:border-box }
+  body { margin:0; background:radial-gradient(1200px 700px at 75% -10%, #4a3a26 0%, var(--bg) 60%); color:var(--ink);
+         font:15px/1.4 ui-sans-serif, system-ui, sans-serif; min-height:100vh }
+  main { max-width:760px; margin:0 auto; padding:28px 20px 60px }
+  h1 { font-weight:600; letter-spacing:.02em; margin:0; font-size:22px }
+  h1 span { color:var(--sun) }
+  .top { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:18px }
+  #clock { color:var(--dim); font-variant-numeric:tabular-nums }
+  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin:12px 0 }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin:0 0 10px; font-weight:600 }
+  .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center }
+  .row + .row { margin-top:10px }
+  button { background:#3a322b; color:var(--ink); border:1px solid #514538; border-radius:999px; padding:6px 13px;
+           font:inherit; cursor:pointer; transition:background .15s }
+  button:hover { background:#4a3f35 }
+  button.on { background:var(--sun); color:#2a1d0c; border-color:var(--sun) }
+  button.big { padding:9px 18px; font-weight:600 }
+  label { color:var(--dim); font-size:13px; display:flex; align-items:center; gap:8px }
+  input[type=range] { width:220px; accent-color:var(--sun) }
+  select { background:#3a322b; color:var(--ink); border:1px solid #514538; border-radius:8px; padding:5px 8px; font:inherit }
+  .num { min-width:3.5ch; color:var(--ink); font-variant-numeric:tabular-nums }
+  .grid { display:grid; grid-template-columns:72px 1fr; gap:10px 12px; align-items:start }
+  .grid > b { color:var(--dim); font-weight:500; font-size:13px; padding-top:6px }
+  #favs div { display:flex; gap:8px; align-items:center; padding:5px 0; border-top:1px solid var(--line); font-size:13px }
+  #favs div:first-child { border-top:0 }
+  #favs code { flex:1; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  #msg { color:var(--dim); font-size:13px; min-height:1.4em; margin-top:8px }
+  .heart.on { background:#e0607a; border-color:#e0607a; color:white }
+</style></head>
+<body><main>
+  <div class="top"><h1>window<span>light</span></h1><div id="clock"></div></div>
+
+  <section>
+    <div class="row">
+      <button class="big" data-cmd="random all">shuffle now</button>
+      <button class="big heart" id="keep">♡ keep</button>
+      <button data-cmd="cat">🐈 cat</button>
+      <button data-cmd="gust 0.9">breeze</button>
+      <button data-cmd="now">real sun</button>
+      <button id="sleep">sleep</button>
+    </div>
+    <div id="msg"></div>
+  </section>
+
+  <section>
+    <h2>scene</h2>
+    <div class="grid">
+      <b>window</b><div class="row" id="style"></div>
+      <b>plant</b><div class="row" id="plant"></div>
+      <b>mood</b><div class="row" id="mood"></div>
+      <b>caustic</b><div class="row" id="caustic"></div>
+      <b>rain</b><div class="row"><button id="rain">off</button></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <label>tilt <input type="range" id="tilt" min="0" max="80"><span class="num" id="tiltv"></span></label>
+      <label>facing <input type="range" id="facing" min="0" max="359"><span class="num" id="facingv"></span></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>over time</h2>
+    <div class="row">
+      <label>shuffle <select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
+      <label>from <select id="pool"><option value="all">everything</option><option value="favourites">favourites</option></select></label>
+      <label>time-lapse <select id="timelapse"><option>off</option><option>day/1m</option><option>day/2m</option><option>day/5m</option><option>full/5m</option></select></label>
+      <label>cat every <select id="catevery"><option>off</option><option>2m</option><option>10m</option><option>30m</option><option>1h</option></select></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>favourites</h2>
+    <div id="favs"></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let st = null, dragging = null;
+async function send(line) {
+  const r = await fetch('/cmd', { method: 'POST', body: line });
+  const t = await r.text();
+  $('msg').textContent = t.length > 160 ? t.slice(0, 160) + '…' : t;
+  poll();
+  return t;
+}
+document.addEventListener('click', e => { const c = e.target.closest('[data-cmd]'); if (c) send(c.dataset.cmd); });
+$('keep').onclick = () => send(st && st.kept ? 'drop' : 'keep');
+$('sleep').onclick = () => send(st && st.asleep ? 'wake' : 'sleep');
+$('rain').onclick = () => send('rain ' + (st && st.look.rain ? 'off' : 'on'));
+for (const k of ['tilt', 'facing']) {
+  $(k).oninput = () => { dragging = k; $(k + 'v').textContent = $(k).value + '°'; };
+  $(k).onchange = () => { dragging = null; send(k + ' ' + $(k).value); };
+}
+const secs = s => s == null ? 'off' : s % 3600 == 0 ? s / 3600 + 'h' : s % 60 == 0 ? s / 60 + 'm' : s + 's';
+const pickSel = (el, v) => { if (![...el.options].some(o => o.value == v)) el.add(new Option(v, v)); el.value = v; };
+$('shuffle').onchange = e => send('set shuffle=' + e.target.value);
+$('pool').onchange = e => send('set pool=' + e.target.value);
+$('timelapse').onchange = e => send(e.target.value == 'off' ? 'now' : 'set timelapse=' + e.target.value);
+$('catevery').onchange = e => send('set cat=' + e.target.value);
+
+function chips(id, list, cur) {
+  const el = $(id);
+  if (el.childElementCount != list.length) {
+    el.innerHTML = '';
+    for (const name of list) { const b = document.createElement('button'); b.textContent = name; b.dataset.cmd = id + ' ' + name; el.append(b); }
+  }
+  for (const b of el.children) b.classList.toggle('on', b.textContent == cur);
+}
+async function poll() {
+  try { st = await (await fetch('/state')).json(); } catch { $('clock').textContent = 'not running'; return; }
+  $('clock').textContent = st.clock.replace('T', '  ') + (st.timelapse ? '  · time-lapse' : '');
+  for (const k of ['style', 'plant', 'mood', 'caustic']) chips(k, st.choices[k], st.look[k]);
+  $('rain').textContent = st.look.rain ? 'on' : 'off'; $('rain').classList.toggle('on', st.look.rain);
+  for (const k of ['tilt', 'facing']) if (dragging != k) { $(k).value = Math.round(st.look[k]); $(k + 'v').textContent = Math.round(st.look[k]) + '°'; }
+  $('keep').textContent = st.kept ? '♥ kept' : '♡ keep'; $('keep').classList.toggle('on', st.kept);
+  $('sleep').textContent = st.asleep ? 'wake' : 'sleep';
+  if (document.activeElement.tagName != 'SELECT') {
+    pickSel($('shuffle'), secs(st.shuffle)); $('pool').value = st.pool;
+    pickSel($('timelapse'), st.timelapse || 'off'); pickSel($('catevery'), secs(st.cat));
+  }
+  const f = $('favs'); f.innerHTML = '';
+  if (!st.favs.length) f.innerHTML = '<div><code>none yet: ♡ keep saves the current look</code></div>';
+  st.favs.forEach((line, i) => {
+    const d = document.createElement('div');
+    d.innerHTML = `<button data-cmd="fav ${i + 1}">show</button><code></code><button data-cmd="drop ${i + 1}">✕</button>`;
+    d.querySelector('code').textContent = line.replace(/--/g, '').replace(/ (tilt|facing) \S+/g, '');
+    f.append(d);
+  });
+}
+poll(); setInterval(poll, 1500);
+</script>
+</body></html>
