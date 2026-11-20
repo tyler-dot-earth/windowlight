@@ -167,6 +167,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Seasons: leaves are thin in spring, full in summer, thinning and amber in autumn. In winter only the bare limbs and twigs remain, apart from the pine. The tree sways with the wind and gusts, the top most.
 - Its shade also dims the glow round the patch and the shaft in the air.
 - Five more plants: `fern` (a Boston fern in a hanging pot, fronds arching over and falling), `pothos` (heart-leaved vines trailing from a hanging pot), `paradise` (bird of paradise: tall torn paddle leaves and one crane-headed flower), `pearls` (string of pearls, strands of little round beads) and `fiddle` (fiddle-leaf fig, big violin-shaped leaves on a straight stem). The hanging ones swing a little on their cords.
+- Small things for scale: a light switch left of the window, standing 9 mm proud so it casts a crisp little shadow when the patch reaches it; a brass picture hook high on the right with an unfaded rectangle below it where a frame used to hang; a nail hole near the patch.
 - Cost at 4K: about 0.1 ms more per frame with a tree (1.9 ms at the bench default with an oak).
 
 ## Setup with Nix

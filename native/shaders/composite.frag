@@ -45,6 +45,30 @@ vec2 planeQ(vec3 p, vec3 pcw, vec3 n, vec3 ua, vec3 L, float ns, float D, float 
   return vec2(dot(ua, h), h.y) - (vec2(dot(ua, hc), hc.y) - WC)*k;
 }
 
+// small things on the wall, for scale: a light switch, and a brass picture hook where a picture used to hang
+// (the paint behind it never faded), with an older nail hole beside it
+const vec2 SW_C = vec2(-0.74, 0.34), SW_H = vec2(0.033, 0.055);
+const vec2 HK_C = vec2(0.95, 1.02);
+float switchD(vec2 p){ return sdBox(p - SW_C, SW_H - 0.004) - 0.004; }
+float hookM(vec2 p){                       // the hook face-on: a little plate with a curled lip under it
+  vec2 d = p - HK_C;
+  float plate = step(sdBox(d - vec2(0.0, 0.006), vec2(0.0035, 0.008)) - 0.0015, 0.0);
+  float lip = step(abs(length(d - vec2(0.0, -0.003)) - 0.0055), 0.0013)*step(d.y, -0.003);
+  return max(plate, lip);
+}
+// how much light from L the switch (9 mm proud of the wall) and the hook (12 mm) keep off wall point p
+float scaleShadow(vec2 p, vec3 L, float soft){
+  vec2 o = L.xy/max(L.z, 0.05);
+  float sd = switchD(p + o*0.009);
+  float s = smoothstep(soft, -soft, sd)*step(0.0, switchD(p));
+  if (length(p - HK_C) < 0.25) {
+    float h = 0.0;
+    for (int i = 0; i < 4; i++) { float a = float(i)*1.571 + 0.7; h += hookM(p + o*0.012 + soft*vec2(cos(a), sin(a))); }
+    s = max(s, 0.25*h*(1.0 - hookM(p)));
+  }
+  return s;
+}
+
 // a flame's flicker, 0..1: a fast flutter on a slower breath. t wraps so the noise keeps its precision
 float flick(float t, float s){
   return 0.5*noise(vec2(t*7.0, s)) + 0.3*noise(vec2(t*17.0, s + 7.0)) + 0.2*noise(vec2(t*1.9, s + 3.0));
@@ -99,16 +123,34 @@ void main(){
   vec2 pg = vec2(texture(uPlaster, pt + vec2(pe/TILE, 0.0)).r - texture(uPlaster, pt - vec2(pe/TILE, 0.0)).r,
                  texture(uPlaster, pt + vec2(0.0, pe/TILE)).r - texture(uPlaster, pt - vec2(0.0, pe/TILE)).r)/(2.0*pe);
   vec3 nb = normalize(vec3(-pg*0.010*bumpAmt, 1.0));
+  // the switch plate: flat on its face, its rounded edge turning out to catch the light
+  float swD = switchD(uv), onSw = smoothstep(ph, -ph, swD), onHk = hookM(uv);
+  if (swD < 0.0) {
+    vec2 sg = vec2(switchD(uv + vec2(0.0008, 0.0)) - switchD(uv - vec2(0.0008, 0.0)), switchD(uv + vec2(0.0, 0.0008)) - switchD(uv - vec2(0.0, 0.0008)))/0.0016;
+    nb = normalize(vec3(sg*1.3*smoothstep(-0.003, 0.0, swD), 1.0));
+  }
+  // where the picture hung: a rectangle of paint the sun never reached, and an older nail hole
+  float ghost = sbox(uv - HK_C - vec2(0.0, -0.3), vec2(0.2, 0.26), 0.008);
+  wall *= 1.0 + 0.03*ghost;
+  float nd = length(uv - HK_C - vec2(-0.3, 0.07));
+  wall *= (1.0 - 0.8*smoothstep(0.0022 + ph, 0.0012, nd))*(1.0 + 0.1*smoothstep(0.0045, 0.003, nd)*smoothstep(0.0012, 0.0026, nd));
   // years of sun have bleached the paint where the window throws it: paler and duller there, a soft ghost of
   // the patch that shows best when the light is somewhere else
   vec2 fq = (uv - FADE_MIN)/FADE_SIZE, fs_ = 1.0/vec2(384.0, 234.0);
   float acc = 0.25*(texture(uFade, fq + fs_*vec2(1.5, 0.7)).r + texture(uFade, fq - fs_*vec2(1.5, 0.7)).r
                   + texture(uFade, fq + fs_*vec2(-0.7, 1.5)).r + texture(uFade, fq - fs_*vec2(-0.7, 1.5)).r);
-  float sunned = smoothstep(0.02, 0.3, acc);
+  float sunned = smoothstep(0.02, 0.3, acc)*(1.0 - 0.9*ghost);
   float wl = dot(wall, vec3(0.2126, 0.7152, 0.0722));
   wall = mix(wall, mix(vec3(wl), wall, 0.62)*1.25 + 0.015, sunned*0.5);
   vec4 skin = texture(uSkin, pt);
   wall *= skin.rgb;
+  // the switch is white plastic, the rocker in it tipped down; the hook is brass. A little contact shade round the plate
+  vec3 plastic = vec3(0.74, 0.68, 0.57);
+  float rk = sdBox(uv - SW_C, vec2(0.011, 0.02));
+  plastic *= (1.0 - 0.3*smoothstep(ph, 0.0, abs(rk)))*(1.0 - 0.1*step(rk, 0.0)*smoothstep(SW_C.y + 0.004, SW_C.y - 0.02, uv.y));
+  wall = mix(wall, plastic, onSw);
+  wall = mix(wall, vec3(0.42, 0.29, 0.1), onHk);
+  wall *= 1.0 - 0.2*exp(-max(swD, 0.0)/0.0025)*(1.0 - onSw);
 
   float day = smoothstep(-0.10, 0.06, sunAlt);
   float twi = exp(-pow((sunAlt + 0.03)/0.07, 2.0));
@@ -159,6 +201,7 @@ void main(){
       for (int i = 0; i < 4; i++) wide += texture(uDap, tu + 0.045*vec2(cos(float(i)*1.571 + 0.4), sin(float(i)*1.571 + 0.4))).r;
       treeWide = mix(tShade, vec3(1.0), wide*0.25);
     }
+    trans *= 1.0 - scaleShadow(uv, L, 0.0093*0.012/max(L.z, 0.05)*hz + ph*0.7);
     if (caustic >= 2) trans *= softCarafe(q - WC, pen);
     trans *= prismT(q - WC, pen);
     if (passing.x == 1.0) trans *= birdsT(planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
