@@ -49,8 +49,9 @@ vec2 planeQ(vec3 p, vec3 pcw, vec3 n, vec3 ua, vec3 L, float ns, float D, float 
 // (the paint behind it never faded), with an older nail hole beside it
 const vec2 SW_C = vec2(-0.74, 0.34), SW_H = vec2(0.033, 0.055);
 const vec2 HK_C = vec2(0.95, 1.02);
-float switchD(vec2 p){ return sdBox(p - SW_C, SW_H - 0.004) - 0.004; }
+float switchD(vec2 p){ return wswitch < 0.5 ? 1.0 : sdBox(p - SW_C, SW_H - 0.004) - 0.004; }
 float hookM(vec2 p){                       // the hook face-on: a little plate with a curled lip under it
+  if (whook < 0.5) return 0.0;
   vec2 d = p - HK_C;
   float plate = step(sdBox(d - vec2(0.0, 0.006), vec2(0.0035, 0.008)) - 0.0015, 0.0);
   float lip = step(abs(length(d - vec2(0.0, -0.003)) - 0.0055), 0.0013)*step(d.y, -0.003);
@@ -538,10 +539,10 @@ void main(){
     nb = normalize(vec3(sg*1.3*smoothstep(-0.003, 0.0, swD), 1.0));
   }
   // where the picture hung: a rectangle of paint the sun never reached, and an older nail hole
-  float ghost = sbox(uv - HK_C - vec2(0.0, -0.3), vec2(0.2, 0.26), 0.008);
+  float ghost = sbox(uv - HK_C - vec2(0.0, -0.3), vec2(0.2, 0.26), 0.008)*whook;
   wall *= 1.0 + 0.03*ghost;
   float nd = length(uv - HK_C - vec2(-0.3, 0.07));
-  wall *= (1.0 - 0.8*smoothstep(0.0022 + ph, 0.0012, nd))*(1.0 + 0.1*smoothstep(0.0045, 0.003, nd)*smoothstep(0.0012, 0.0026, nd));
+  if (whook > 0.01) wall *= mix(1.0, (1.0 - 0.8*smoothstep(0.0022 + ph, 0.0012, nd))*(1.0 + 0.1*smoothstep(0.0045, 0.003, nd)*smoothstep(0.0012, 0.0026, nd)), whook);
   // years of sun have bleached the paint where the window throws it: paler and duller there, a soft ghost of
   // the patch that shows best when the light is somewhere else
   vec2 fq = (uv - FADE_MIN)/FADE_SIZE, fs_ = 1.0/vec2(384.0, 234.0);
