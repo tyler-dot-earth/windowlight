@@ -1,7 +1,7 @@
 // every frame, full resolution: wall, light and grading, reading the baked textures
 in vec2 vUv; out vec4 fragColor;
 uniform vec2 res;
-uniform sampler2D uPlaster, uAp, uFol, uCaus;
+uniform sampler2D uPlaster, uSkin, uAp, uFol, uCaus;
 uniform vec2 apTexel, folTexel;   // texels per unit
 uniform vec3 wallA, sunTint, shadeTint, nightTint;
 uniform float mottle, bumpAmt, expo, sat, contrast, ambAmt, fade, lightK;
@@ -74,7 +74,10 @@ void main(){
   vec2 pc = wc.xy - (wc.z/max(L.z, 0.12))*L.xy;
   vec2 pcR = wc.xy - (wc.z/max(L.z, 0.12))*vec2(L.x, -L.y);
   vec2 aim = pool && isSun ? mix(pc, pcR, 0.5) : pc;
-  uv += clamp(aim - vec2(0.0, 0.5), vec2(-0.6, -0.45), vec2(0.6, pool ? 0.9 : 0.45)) * 0.8 * smoothstep(0.0, 0.06, alt) * smoothstep(0.03, 0.12, ns);
+  vec2 shift = clamp(aim - vec2(0.0, 0.5), vec2(-0.6, -0.45), vec2(0.6, pool ? 0.9 : 0.45)) * 0.8 * smoothstep(0.0, 0.06, alt) * smoothstep(0.03, 0.12, ns);
+  uv += shift;
+  // where we stand looking at the wall, for the glint off glazed or painted surfaces
+  vec3 eye = vec3(shift + vec2(0.0, 0.5), 2.4);
 
   vec3 wall = pow(wallA, vec3(2.2));
   wall *= 1.0 + mottle*(fbm(uv*2.2 + 5.0) - 0.5)*2.4;
@@ -82,11 +85,11 @@ void main(){
   float ph = (pool ? 1.9 : 1.4)/res.y;
   float pe = max(ph, TILE/4096.0);
   vec2 pt = uv/TILE;
-  float h0 = texture(uPlaster, pt).r;
   vec2 pg = vec2(texture(uPlaster, pt + vec2(pe/TILE, 0.0)).r - texture(uPlaster, pt - vec2(pe/TILE, 0.0)).r,
                  texture(uPlaster, pt + vec2(0.0, pe/TILE)).r - texture(uPlaster, pt - vec2(0.0, pe/TILE)).r)/(2.0*pe);
   vec3 nb = normalize(vec3(-pg*0.010*bumpAmt, 1.0));
-  wall *= 0.93 + 0.14*h0;
+  vec4 skin = texture(uSkin, pt);
+  wall *= skin.rgb;
 
   float day = smoothstep(-0.10, 0.06, sunAlt);
   float twi = exp(-pow((sunAlt + 0.03)/0.07, 2.0));
@@ -132,6 +135,12 @@ void main(){
     float halo = sbox(lq, WH, pen*6.0 + 0.03)*0.07 + sbox(lq, WH, 0.18 + 0.25*haze)*(0.05 + 0.08*haze);
     vec3 direct = lc*strength*(lit*trans*fringe*shade + halo*(0.4 + 0.6*flat_)*vec3(1.0, 0.9, 0.8));
     col += wall*direct;
+    // gloss: the sun caught in each glazed tile or satin board that faces halfway between it and us
+    if (skin.a > 0.0) {
+      vec3 Hh = normalize(L + normalize(eye - p));
+      float nh = max(dot(nb, Hh), 0.0);
+      col += lc*strength*lit*trans*skin.a*(pow(nh, 140.0)*2.2 + pow(nh, 12.0)*0.06)*(isSun ? 1.0 : 0.5);
+    }
     col += wall*wall*lc*strength*0.06*(isSun ? 1.0 : 0.0);
     if (isSun) col += lc*strength*motes(uv)*lit*0.05*(1.0 - haze);
 

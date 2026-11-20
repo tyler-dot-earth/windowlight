@@ -148,7 +148,11 @@
   .leaf[data-v="none"] .pic::after { content:"no plant"; font-size:10.5px; color:#0007; letter-spacing:.04em }
   .leaf[data-v="none"] .lbl { visibility:hidden }
   /* walls: paint chips with a soft patch of sun */
-  .paint .pic { aspect-ratio:1.25; background:radial-gradient(70% 80% at 72% 28%, #fff5 , transparent 70%), var(--c) }
+  .paint .pic { aspect-ratio:1.25; background:radial-gradient(70% 80% at 72% 28%, #fff5 , transparent 70%), var(--mat, none) center/cover, var(--c);
+                background-blend-mode:screen, multiply }
+  /* materials: the wallpaper's own swatch of each, in raking light, in the paint now on the wall */
+  .stuff .pic { aspect-ratio:1.25; background:var(--sw, none) center/cover, var(--wall); background-blend-mode:multiply }
+  .stuff .pic::before { content:""; position:absolute; inset:0; background:linear-gradient(180deg, transparent 60%, #0002) }
   .paint .pic::before { content:""; position:absolute; inset:0; background:linear-gradient(180deg, transparent 55%, #0003) }
   .walls { grid-template-columns:repeat(auto-fill, minmax(70px, 1fr)) }
   @media (max-width:560px) { .tiles, .walls { grid-template-columns:repeat(auto-fill, minmax(62px, 1fr)); gap:10px 6px } #style, #styleh { grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)) } section { padding:18px 16px 20px } }
@@ -365,7 +369,8 @@
 
       <section style="--o:3">
         <h2>Room</h2>
-        <div class="group"><h3>wall</h3><div class="tiles walls" id="mood"></div></div>
+        <div class="group"><h3>paint</h3><div class="tiles walls" id="mood"></div></div>
+        <div class="group"><h3>wall <small>what it's made of</small></h3><div class="tiles walls" id="material"></div></div>
         <div class="group"><h3>plant</h3><div class="tiles" id="plant"></div></div>
         <div class="group"><h3>lamp <small>a light of its own</small></h3><div id="lamp"></div></div>
         <div class="group"><h3>caustics and extras</h3>
@@ -424,7 +429,7 @@ async function send(line, quiet) {
   // air comes back as every level; name only the ones set by hand
   const air = /\bshade (auto|curve|[\d.]+)$/.test(t) ? [...t.matchAll(/(\w+) ([\d.]+|curve)/g)].map(x => x[2] == "curve" ? `${x[1]} on a curve` : `${x[1]} ${Math.round(x[2] * 100)}%`) : null;
   if (!quiet) toast(air ? (air.length ? air.join(" · ") : "all air follows the signals")
-        : o ? [o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && lampName(o.lamp), `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
+        : o ? [o.style, o.plant == 'none' ? 'no plant' : o.plant, o.mood, o.material && o.material != 'plaster' && o.material, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && lampName(o.lamp), `facing ${Math.round(o.facing)}°`].filter(Boolean).join(' · ')
           : t.length > 200 ? t.slice(0, 200) + '…' : t);
   poll();
   clearTimeout(shotT); shotT = setTimeout(shot, 1300);   // after the crossfade has mostly settled
@@ -636,7 +641,7 @@ async function poll() {
   $('status').replaceChildren(...pills.map(([h, c]) => { const p = el('span', 'pill' + (c ? ' ' + c : '')); p.innerHTML = h; return p; }));
 
   // now
-  const tag = $('tag'); tag.replaceChildren(el('b', '', L.style), [L.plant == 'none' ? 'no plant' : L.plant, L.mood, L.lamp != 'none' && lampName(L.lamp)].filter(Boolean).join(' · '));
+  const tag = $('tag'); tag.replaceChildren(el('b', '', L.style), [L.plant == 'none' ? 'no plant' : L.plant, L.mood, L.material && L.material != 'plaster' && L.material, L.lamp != 'none' && lampName(L.lamp)].filter(Boolean).join(' · '));
   $('preview').classList.toggle('zz', st.asleep);
   $('keep').classList.toggle('on', st.kept); $('keep').lastChild.textContent = st.kept ? 'Kept' : 'Keep';
   $('sleep').lastChild.textContent = st.asleep ? 'Wake' : 'Sleep'; $('sleep').querySelector('use').setAttribute('href', st.asleep ? '#i-sun' : '#i-moon');
@@ -646,8 +651,10 @@ async function poll() {
   chips('style', C.style.slice(0, h), L.style, { kind: 'tile win', make: tile });
   chips('styleh', C.style.slice(h), L.style, { cmd: 'style', kind: 'tile win', make: tile });
   chips('mood', C.mood, L.mood, { kind: 'tile paint', make: (b, n, i) => { tile(b, n); b.style.setProperty('--c', C.mood_wall[i]); } });
+  chips('material', C.material, L.material, { kind: 'tile stuff', make: tile });
   chips('plant', C.plant, L.plant, { kind: 'tile leaf', make: tile });
   deck();
+  if (G && G.material) document.documentElement.style.setProperty('--mat', `url(data:image/png;base64,${G.material[L.material]})`);
   chips('lamp', C.lamp, L.lamp, { make: lampChip, group: lampGroup });
   chips('caustic', C.caustic, L.caustic);
   $('rain').classList.toggle('on', L.rain); $('prism').classList.toggle('on', L.prism);
@@ -698,7 +705,7 @@ async function poll() {
     const pic = el('span', 'pic'); pic.style.setProperty('--c', C.mood_wall[C.mood.indexOf(o.mood)] || '#888');
     if (G && G.style[o.style]) { const im = el('img'); im.src = 'data:image/png;base64,' + G.style[o.style]; im.alt = ''; pic.append(im); }
     const what = el('div', 'what'); what.append(el('b', '', `${o.style} · ${o.plant == 'none' ? 'no plant' : o.plant}`),
-      el('small', '', [o.mood, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && lampName(o.lamp)].filter(Boolean).join(' · ')));
+      el('small', '', [o.mood, o.material && o.material != 'plaster' && o.material, o.caustic != 'none' && o.caustic, o.rain == 'on' && 'rain', o.prism == 'on' && 'suncatcher', o.lamp && o.lamp != 'none' && lampName(o.lamp)].filter(Boolean).join(' · ')));
     const x = el('button', 'x'); x.append(icon('x')); x.title = 'remove'; x.onclick = () => send(`drop ${i + 1}`);
     d.dataset.cmd = `fav ${i + 1}`; d.append(pic, what, x); f.append(d);
   });
@@ -738,6 +745,7 @@ function deck() {
     const p = b.firstChild, src = G.plant[b.dataset.v];
     if (src && !p.firstChild) { const s = el('i', 'sil'); s.style.setProperty('--m', `url(data:image/png;base64,${src})`); p.append(s); }
   }
+  for (const b of $('material').children) if (G.material) b.firstChild.style.setProperty('--sw', `url(data:image/png;base64,${G.material[b.dataset.v]})`);
 }
 // ---- where: the sun, the earth and the moon where they really are; click the earth to live there
 const RAD = Math.PI / 180, clamp = (x, a, b) => Math.min(b, Math.max(a, x));

@@ -2,12 +2,15 @@
 // full-resolution pass only does a handful of texture lookups per pixel.
 use crate::look::Mood;
 use glow::HasContext;
+use std::cell::Cell;
 
 const COMMON: &str = include_str!("../shaders/common.glsl");
 const VERT: &str = include_str!("../shaders/fullscreen.vert");
 
 // 2048 texels per wall unit, finer than a 4K screen draws it (about 1540 px per unit)
 const PLASTER: (i32, i32) = (4096, 4096);
+// the wall's own colour and gloss change more gently than its relief, so half as fine does
+const SKIN: (i32, i32) = (2048, 2048);
 const AP: (i32, i32) = (1536, 1728);
 const FOL: (i32, i32) = (2048, 1906);
 const CAUS: (i32, i32) = (1024, 1152);
@@ -19,7 +22,7 @@ pub struct Target { pub tex: glow::Texture, pub fb: glow::Framebuffer, pub w: i3
 /// everything one frame of one scene needs
 #[derive(Clone)]
 pub struct Frame {
-    pub time: f32, pub style: i32, pub plant: i32, pub caustic: i32, pub tilt: f32,
+    pub time: f32, pub style: i32, pub plant: i32, pub caustic: i32, pub material: i32, pub tilt: f32,
     pub sun: [f32; 3], pub sun_alt: f32, pub mood: Mood, pub fade: f32,
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
     pub prism: f32, pub passing: [f32; 4], pub season: [f32; 4],
@@ -35,7 +38,8 @@ pub struct SceneTex { ap: Target, fol: Target, caus: Target, ap_key: Option<(i32
 pub struct Renderer {
     pub gl: glow::Context,
     vao: glow::VertexArray,
-    plaster: Target,
+    /// the wall material baked over one tile: relief, and colour with gloss; rebaked when the material changes
+    plaster: Target, skin: Target, baked: Cell<i32>, p_surf: glow::Program,
     p_ap: glow::Program, p_fol: glow::Program, p_caus: glow::Program, p_comp: glow::Program,
 }
 
@@ -78,18 +82,42 @@ impl Renderer {
             return Err("GPU can't render to half-float textures".into());
         }
         let vao = gl.create_vertex_array()?;
-        let p_plaster = program(&gl, "plaster", include_str!("../shaders/plaster.frag"))?;
         let r = Renderer {
+            p_surf: program(&gl, "plaster", include_str!("../shaders/plaster.frag"))?,
             p_ap: program(&gl, "aperture", include_str!("../shaders/aperture.frag"))?,
             p_fol: program(&gl, "foliage", include_str!("../shaders/foliage.frag"))?,
             p_caus: program(&gl, "caustic", include_str!("../shaders/caustic.frag"))?,
             p_comp: program(&gl, "composite", include_str!("../shaders/composite.frag"))?,
             plaster: target(&gl, PLASTER, glow::R16F, true, true),
+            skin: target(&gl, SKIN, glow::RGBA16F, true, true),
+            baked: Cell::new(-1),
             vao, gl,
         };
-        r.pass(p_plaster, &r.plaster, None);
-        r.gl.delete_program(p_plaster);
+        r.bake(0);
         Ok(r)
+    }
+
+    /// bake material `m`: its relief into plaster (mode 0) and its colour and gloss into skin (mode 1)
+    unsafe fn bake(&self, m: i32) {
+        if self.baked.get() == m { return; }
+        for (mode, t) in [(0, &self.plaster), (1, &self.skin)] { self.surf_pass(t, m, mode); }
+        self.baked.set(m);
+    }
+    unsafe fn surf_pass(&self, t: &Target, m: i32, mode: i32) {
+        let gl = &self.gl;
+        gl.use_program(Some(self.p_surf));
+        gl.uniform_1_i32(gl.get_uniform_location(self.p_surf, "material").as_ref(), m);
+        gl.uniform_1_i32(gl.get_uniform_location(self.p_surf, "mode").as_ref(), mode);
+        self.pass(self.p_surf, t, None);
+    }
+
+    /// a small swatch of material `m` in raking light, grey, for the control page (mode 2)
+    pub unsafe fn swatch(&self, m: i32, w: i32, h: i32) -> Vec<u8> {
+        let t = self.canvas(w, h);
+        self.surf_pass(&t, m, 2);
+        let rgb = self.read_rgb(&t);
+        self.drop_target(t);
+        rgb.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect()
     }
 
     pub unsafe fn scene_tex(&self) -> SceneTex {
@@ -146,6 +174,7 @@ impl Renderer {
 
     /// render one scene into `fb` (None = the window), blended over what's there by `alpha`
     pub unsafe fn draw(&self, s: &mut SceneTex, f: &Frame, fb: Option<glow::Framebuffer>, w: i32, h: i32, alpha: f32) {
+        self.bake(f.material);
         let gl = &self.gl;
         // window light: only when the style or tilt changes, or every frame while something on the glass moves
         // (the sheer curtain, rain, or the cat)
@@ -181,7 +210,7 @@ impl Renderer {
                        ("contrast", m.contrast), ("ambAmt", m.amb), ("fade", f.fade), ("lightK", f.light_k)] {
             gl.uniform_1_f32(u(n).as_ref(), v);
         }
-        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus)].iter().enumerate() {
+        for (i, (n, t)) in [("uPlaster", &self.plaster), ("uSkin", &self.skin), ("uAp", &s.ap), ("uFol", &s.fol), ("uCaus", &s.caus)].iter().enumerate() {
             gl.active_texture(glow::TEXTURE0 + i as u32);
             gl.bind_texture(glow::TEXTURE_2D, Some(t.tex));
             gl.uniform_1_i32(u(n).as_ref(), i as i32);

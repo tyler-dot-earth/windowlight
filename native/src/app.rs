@@ -1,7 +1,7 @@
 // Scene state over time: the current look, transitions between looks, gusts, the cat, favourites,
 // and wake/sleep fades.
 use crate::gfx::{Frame, Renderer, SceneTex};
-use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, LAMPS, MOODS, PLANTS, STYLES};
+use crate::look::{Look, Mood, Rng, CAUSTICS, HISTORIC, LAMPS, MATERIALS, MOODS, PLANTS, STYLES};
 pub const SEASONS: [&str; 5] = ["spring", "summer", "autumn", "winter", "auto"];
 use crate::signals::Signals;
 use crate::sun;
@@ -123,7 +123,7 @@ pub struct App {
     base_ms: f64,
     /// where the scene is heading
     pub look: Look,
-    /// the window, plant and caustic being drawn (lags `look` until the cloud covers the swap)
+    /// the window, plant, caustic and wall material being drawn (lags `look` until the cloud covers the swap)
     drawn: Look,
     cur: SceneTex,
     c_from: Cont, c_to: Cont, c_k: Tween,
@@ -257,7 +257,7 @@ impl App {
         let (flock, flock_n) = s.birds(now, anim);
         let l = &self.drawn;
         Frame {
-            time: anim as f32, style: l.style as i32, plant: l.plant as i32, caustic: l.caustic as i32,
+            time: anim as f32, style: l.style as i32, plant: l.plant as i32, caustic: l.caustic as i32, material: l.material as i32,
             tilt: c.tilt.to_radians() as f32, sun: sun::room_vec(alt, az, c.facing), sun_alt: alt as f32,
             mood, fade: (self.fade.at(now) * self.lapse.map_or(1.0, |l| l.edge(now))) as f32,
             rain: rain as f32, gust: self.gust(now).max(0.75 * s.amount("wind")) as f32, cat: self.cat_vec(now), light_k: lk as f32,
@@ -286,7 +286,7 @@ impl App {
     pub fn set_look(&mut self, next: Look, now: Instant) {
         if next == self.look { return; }
         let here = self.cont(now);
-        let swap = self.jump.is_some() || (next.style, next.plant, next.caustic) != (self.drawn.style, self.drawn.plant, self.drawn.caustic);
+        let swap = self.jump.is_some() || (next.style, next.plant, next.caustic, next.material) != (self.drawn.style, self.drawn.plant, self.drawn.caustic, self.drawn.material);
         let dur = if swap {
             match self.cloud {
                 Some(c) if !c.swapped => {}
@@ -381,7 +381,7 @@ impl App {
         let hex = |c: [f32; 3]| format!("#{:02x}{:02x}{:02x}", (c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
         let walls: Vec<String> = (0..MOODS.len()).map(|i| hex(Mood::named(i).wall)).collect();
         serde_json::json!({
-            "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "mood": MOODS[l.mood], "caustic": CAUSTICS[l.caustic],
+            "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "mood": MOODS[l.mood], "material": MATERIALS[l.material], "caustic": CAUSTICS[l.caustic],
                       "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism, "lamp": LAMPS[l.lamp] },
             "flags": l.flags(), "clock": self.clock(now), "asleep": self.asleep || self.fade.to == 0.0,
             "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": self.o.pool,
@@ -392,7 +392,7 @@ impl App {
             "place": { "lat": self.o.lat, "lon": self.o.lon }, "ms": self.sim_ms(now),
             "sun": { "alt": alt.to_degrees().round(), "az": az.to_degrees().rem_euclid(360.0).round() },
             "signals": self.sig.state(),
-            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "mood_wall": walls, "caustic": CAUSTICS, "lamp": LAMPS, "season": SEASONS },
+            "choices": { "style": STYLES, "historic_from": HISTORIC, "plant": PLANTS, "mood": MOODS, "mood_wall": walls, "material": MATERIALS, "caustic": CAUSTICS, "lamp": LAMPS, "season": SEASONS },
         }).to_string()
     }
 }
@@ -453,7 +453,7 @@ impl App {
                 self.set_look(next, now);
                 self.look.flags()
             }
-            "set" | "mood" | "style" | "plant" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "lamp" | "season" => {
+            "set" | "mood" | "material" | "style" | "plant" | "caustic" | "tilt" | "facing" | "rain" | "prism" | "suncatcher" | "lamp" | "season" => {
                 let pairs: Vec<(String, String)> = if cmd == "set" {
                     rest.iter().filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect()
                 } else {
@@ -650,7 +650,11 @@ impl App {
                     let crop: Vec<u8> = (y0..=y1).flat_map(|y| px[(y * w + x0) * 4..(y * w + x1 + 1) * 4].to_vec()).collect();
                     plants.insert(name.to_string(), base64(&png_rgba((x1 - x0 + 1) as i32, (y1 - y0 + 1) as i32, &crop)).into());
                 }
-                serde_json::json!({ "style": styles, "plant": plants }).to_string()
+                let mut mats = serde_json::Map::new();
+                for (i, name) in MATERIALS.iter().enumerate() {
+                    mats.insert(name.to_string(), base64(&png_rgba(160, 128, &r.swatch(i as i32, 160, 128))).into());
+                }
+                serde_json::json!({ "style": styles, "plant": plants, "material": mats }).to_string()
             }
             // lock screen hooks: sleep fades to dark and stops drawing; wake fades in while the sun sweeps up to now
             "sleep" => { self.fade = Tween { from: self.fade.at(now), to: 0.0, t0: now, dur: 0.8 }; "sleeping".into() }
@@ -663,7 +667,7 @@ impl App {
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/style/plant/caustic/tilt/facing/rain/prism/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
+                  | mood/material/style/plant/caustic/tilt/facing/rain/prism/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
         }
     }
 }
