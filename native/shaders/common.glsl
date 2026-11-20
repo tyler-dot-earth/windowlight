@@ -735,11 +735,15 @@ vec3 sunColor(float a){                 // linear colour of direct sun by altitu
 }
 
 // tileable plaster: the noise lattice wraps every TILE wall units, so it bakes into one repeating texture
-float noiseP(vec2 p, float per){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+// gradient noise, so no square lattice shows through in raking light; 0..1 like value noise
+vec2 gradP(vec2 i){ float a = 6.2831853*hash(i); return vec2(cos(a), sin(a)); }
+float noiseP(vec2 p, float per){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*f*(f*(f*6.-15.)+10.);
   vec2 a=mod(i,per), b=mod(i+1.,per);
-  return mix(mix(hash(a),hash(vec2(b.x,a.y)),f.x), mix(hash(vec2(a.x,b.y)),hash(b),f.x), f.y); }
+  float n = mix(mix(dot(gradP(a), f), dot(gradP(vec2(b.x,a.y)), f - vec2(1.,0.)), u.x),
+                mix(dot(gradP(vec2(a.x,b.y)), f - vec2(0.,1.)), dot(gradP(b), f - 1.), u.x), u.y);
+  return 0.5 + 0.75*n; }
 float fbmP(vec2 p, float per){ float a=.5, s=0.; for(int i=0;i<4;i++){ s+=a*noiseP(p,per); p*=2.; per*=2.; a*=.5; } return s; }
-float plasterP(vec2 x){ return fbmP(x*7.0, 7.0*TILE)*0.55 + fbmP(x*38.0, 38.0*TILE)*0.3 + noiseP(x*170.0, 170.0*TILE)*0.15; }
+float plasterP(vec2 x){ return fbmP(x*7.0, 7.0*TILE)*0.55 + fbmP(x*38.0, 38.0*TILE)*0.3 + noiseP(x*170.0, 170.0*TILE)*0.08 + 0.035; }
 
 float motes(vec2 uv){
   float m = 0.0;

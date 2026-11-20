@@ -55,18 +55,19 @@ fn run_inner(o: Opts) -> Result<(), String> {
     };
     queue.roundtrip(&mut st).map_err(|e| e.to_string())?;
 
-    // pick the output and its physical mode size
+    // pick the output (the named one, else the first) and its physical mode size
     let mut chosen = None;
     for out in st.outputs.outputs() {
         let Some(info) = st.outputs.info(&out) else { continue };
-        if info.name.as_deref() == Some(o.output.as_str()) {
+        let name = info.name.clone().unwrap_or_default();
+        if chosen.is_none() && (o.output.is_empty() || name == o.output) {
             let mode = info.modes.iter().find(|m| m.current).map(|m| m.dimensions);
-            chosen = Some((out, mode));
+            chosen = Some((out, mode, name));
         }
     }
-    let Some((output, mode)) = chosen else {
+    let Some((output, mode, out_name)) = chosen else {
         let names: Vec<String> = st.outputs.outputs().filter_map(|x| st.outputs.info(&x)?.name).collect();
-        return Err(format!("no output named {}; have {}", o.output, names.join(", ")));
+        return Err(if o.output.is_empty() { "no outputs found".into() } else { format!("no output named {}; have {}", o.output, names.join(", ")) });
     };
 
     let surface = compositor.create_surface(&qh);
@@ -83,7 +84,7 @@ fn run_inner(o: Opts) -> Result<(), String> {
     let (bw, bh) = (((pw as f64) * o.scale).round().max(1.0) as i32, ((ph as f64) * o.scale).round().max(1.0) as i32);
     let viewport: WpViewport = viewporter.get_viewport(layer.wl_surface(), &qh, ());
     viewport.set_destination(lw as i32, lh as i32);
-    eprintln!("windowlight: {} logical {lw}x{lh}, drawing {bw}x{bh} at {} fps", o.output, o.fps);
+    eprintln!("windowlight: {out_name} logical {lw}x{lh}, drawing {bw}x{bh} at {} fps", o.fps);
 
     let wl_egl = wayland_egl::WlEglSurface::new(layer.wl_surface().id(), bw, bh).map_err(|e| e.to_string())?;
     let gl = Gl::wayland(conn.backend().display_ptr() as *mut _, wl_egl.ptr() as *mut _)?;
@@ -94,7 +95,7 @@ fn run_inner(o: Opts) -> Result<(), String> {
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
     }
     let (tx, rx) = ipc::listen()?;
-    if !o.workspaces.is_empty() || o.breeze { ipc::follow_niri(o.output.clone(), o.breeze, tx.clone()); }
+    if !o.workspaces.is_empty() || o.breeze { ipc::follow_niri(out_name.clone(), o.breeze, tx.clone()); }
     if let Some(port) = o.ui_port { crate::ui::serve(port, tx.clone()); }
     eprintln!("windowlight: control socket {}", ipc::sock_path());
     let frame_dt = |a: &App| Duration::from_secs_f64(1.0 / a.o.fps);

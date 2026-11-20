@@ -6,7 +6,8 @@ use glow::HasContext;
 const COMMON: &str = include_str!("../shaders/common.glsl");
 const VERT: &str = include_str!("../shaders/fullscreen.vert");
 
-const PLASTER: (i32, i32) = (2048, 2048);
+// 2048 texels per wall unit, finer than a 4K screen draws it (about 1540 px per unit)
+const PLASTER: (i32, i32) = (4096, 4096);
 const AP: (i32, i32) = (1536, 1728);
 const FOL: (i32, i32) = (2048, 1906);
 const CAUS: (i32, i32) = (1024, 1152);
@@ -81,7 +82,7 @@ impl Renderer {
             p_fol: program(&gl, "foliage", include_str!("../shaders/foliage.frag"))?,
             p_caus: program(&gl, "caustic", include_str!("../shaders/caustic.frag"))?,
             p_comp: program(&gl, "composite", include_str!("../shaders/composite.frag"))?,
-            plaster: target(&gl, PLASTER, glow::RGBA16F, true, true),
+            plaster: target(&gl, PLASTER, glow::R16F, true, true),
             vao, gl,
         };
         r.pass(p_plaster, &r.plaster, None);

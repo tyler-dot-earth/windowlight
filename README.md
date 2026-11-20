@@ -11,7 +11,7 @@ Throwaway spike: sunlight through a window onto a wall as a live niri wallpaper,
   - `facing` (window compass direction), `lat`, `lon`, `t` (fixed time)
 - Rendering: linear light with ACES tonemapping, bump-lit plaster, warm penumbra fringes, halation, room bounce in the wall colour, faint green light through leaves, dust motes, blue hour, and a full-moon stand-in at night. The view pans to keep the light framed, and the plant stays in front of the window. Plants have a second, farther layer of leaves whose shadows are softer
 - `gen-glpaper.mjs` turns that shader into a glpaper shader that computes the sun on the GPU, so it keeps following the sun without restarts
-- `./run.sh` runs it live on the background layer (default output DP-2, 10 fps at 1280x720). Ctrl-C stops it. Example: `./run.sh DP-2 --style arch --plant olive --mood terracotta --facing 200 --caustic both`
+- `./run.sh OUTPUT` runs it live on the background layer (10 fps at 1280x720). Ctrl-C stops it. Example: `./run.sh DP-1 --style arch --plant olive --mood terracotta --facing 200 --caustic both`
 - Cost on the RX 7800-class card: measured midday with olive leaves, about 3% GPU at the default and 18% at 1080p and 30 fps; caustics add about 1 and 2 points
 - `shot.sh` renders a still with headless Chrome, and `shots/v4/` holds the style, mood and scene sheets and a terracotta time-lapse; `shots/v5/` holds the caustics, tilt and day sheets and `ripples.gif`
 
@@ -24,7 +24,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Slow parts are baked into textures: the plaster once, the window shape when the style or angle changes, and the leaves and pool ripples at a small size each frame. The full-resolution pass only does a handful of texture lookups per pixel; soft shadow edges come from blurrier mip levels
 - Cost at 3840x2160 on the RX 7800 XT: 0.6 to 1.4 ms per frame offscreen (worst is olive plus both caustics), about 4% of the card at 30 fps and 9% at 60. Live on DP-2 at 30 fps the desktop's GPU load stayed in the same 5 to 10% range it shows without it
 - `native/wl.sh` builds it with nix tools (cargo cache stays in the folder) and runs it:
-  - `./wl.sh run --plant olive --caustic both` draws on DP-2 (`--output`, `--fps 30`, `--scale 0.5` for a cheaper half-resolution buffer)
+  - `./wl.sh run --plant olive --caustic both` draws on the first monitor (`--output NAME` picks one, `--fps 30`, `--scale 0.5` for a cheaper half-resolution buffer)
   - `./wl.sh run --workspaces linen,sage,nocturne,terracotta` follows niri and fades the mood when the active workspace on that output changes
   - `./wl.sh run --random` picks a look at start, and `--shuffle 20s` (or `5m`, `1h`) crossfades to a new random look on that interval; `ctl set shuffle=10s` or `shuffle=off` changes it while running
   - `./wl.sh ctl random all`, `ctl mood sage`, `ctl set style=arch tilt=50`, `ctl get` change the running wallpaper; mood-only changes tween the colours and anything else crossfades
@@ -115,3 +115,10 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - birds only show where sunlight or moonlight falls, so an overcast or dark scene hides them;
   - perched birds float on round windows with no straight sill;
   - OpenMausBot bots need to write their own signal files; nothing reads the app's internals.
+
+## Round nine: sharper plaster
+
+- The wall's plaster was baked into a 2048-pixel tile that a 4K screen stretched about 1.5×, and its finest noise sat on a square grid about 9 pixels wide, so raking light showed blocky cells.
+- Now the plaster bakes as height only at 4096 per tile (2048 texels per wall unit, finer than 4K draws it), in the same memory as before.
+- The slope is taken per screen pixel when drawing, and the noise is gradient noise, so no grid shows.
+- The live wallpaper picks the first monitor unless `--output NAME` names one; `run.sh` (the old glpaper path) now needs the output name.

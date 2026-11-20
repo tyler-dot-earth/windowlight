@@ -67,12 +67,12 @@ pub fn follow_niri(output: String, breeze: bool, tx: Sender<Cmd>) {
                 for w in list {
                     let (Some(id), Some(idx)) = (w["id"].as_u64(), w["idx"].as_u64()) else { continue };
                     let out = w["output"].as_str().unwrap_or("").to_string();
-                    if out == output && w["is_active"].as_bool() == Some(true) && idx != last { last = idx; send(format!("workspace {idx}")); }
+                    if (output.is_empty() || out == output) && w["is_active"].as_bool() == Some(true) && idx != last { last = idx; send(format!("workspace {idx}")); }
                     ws.insert(id, (idx, out));
                 }
             } else if let Some(id) = v.pointer("/WorkspaceActivated/id").and_then(|x| x.as_u64()) {
                 if let Some((idx, out)) = ws.get(&id) {
-                    if *out == output && *idx != last { last = *idx; send(format!("workspace {idx}")); gust(0.7); }
+                    if (output.is_empty() || *out == output) && *idx != last { last = *idx; send(format!("workspace {idx}")); gust(0.7); }
                 }
             } else if let Some(list) = v.pointer("/WindowsChanged/windows").and_then(|x| x.as_array()) {
                 // the full list arrives first; no wind for windows that were already there

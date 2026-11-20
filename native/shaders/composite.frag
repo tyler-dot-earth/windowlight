@@ -54,9 +54,15 @@ void main(){
 
   vec3 wall = pow(wallA, vec3(2.2));
   wall *= 1.0 + mottle*(fbm(uv*2.2 + 5.0) - 0.5)*2.4;
-  vec4 pl = texture(uPlaster, uv/TILE);
-  vec3 nb = normalize(vec3(-pl.gb*bumpAmt, 1.0));
-  wall *= 0.93 + 0.14*pl.r;
+  // plaster height, and its slope over one screen pixel (never finer than a texel)
+  float ph = (pool ? 1.9 : 1.4)/res.y;
+  float pe = max(ph, TILE/4096.0);
+  vec2 pt = uv/TILE;
+  float h0 = texture(uPlaster, pt).r;
+  vec2 pg = vec2(texture(uPlaster, pt + vec2(pe/TILE, 0.0)).r - texture(uPlaster, pt - vec2(pe/TILE, 0.0)).r,
+                 texture(uPlaster, pt + vec2(0.0, pe/TILE)).r - texture(uPlaster, pt - vec2(0.0, pe/TILE)).r)/(2.0*pe);
+  vec3 nb = normalize(vec3(-pg*0.010*bumpAmt, 1.0));
+  wall *= 0.93 + 0.14*h0;
 
   float day = smoothstep(-0.10, 0.06, sunAlt);
   float twi = exp(-pow((sunAlt + 0.03)/0.07, 2.0));
