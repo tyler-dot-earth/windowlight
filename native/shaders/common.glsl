@@ -4,7 +4,7 @@ precision highp int;
 uniform float time;
 uniform int style;      // 0 window 1 blinds 2 lattice 3 georgian 4 arch 5 shutters 6 sheer 7 porthole 8 stained 9 slats 10 jali
                         // 11 rose 12 tracery 13 palladian 14 shoji 15 moorish 16 prairie 17 moon 18 persian 19 nouveau
-uniform int plantType;  // 0 none 1 ficus 2 monstera 3 palm 4 olive
+uniform int plantType;  // 0 none 1 ficus 2 monstera 3 palm 4 olive 5 fern 6 pothos 7 bird of paradise 8 string of pearls 9 fiddle-leaf fig
 uniform int treeType;   // the tree outside: 0 none 1 oak 2 birch 3 willow 4 pine
 uniform int caustic;    // 0 none 1 pool 2 glass 3 both
 uniform float tilt;     // window plane angle against the wall, radians
@@ -764,10 +764,151 @@ float olive(vec2 p){
   b = max(b, olBranch(p, vec2(1.0, 1.55), -2.45 - s, 0.95, -0.15, 3.0));
   return b;
 }
+// a hanging pot: its cord up to the hook and its round-bottomed bowl, centred on c
+float hangPot(vec2 p, vec2 c, float r){
+  float cord = step(abs(p.x - c.x), 0.0025)*step(c.y, p.y)*step(p.y, 2.1);
+  vec2 d = (p - c)/vec2(r, r*0.75);
+  float bowl = step(length(d), 1.0)*step(d.y, 0.35);
+  float rim = step(abs(d.x), 1.08)*step(abs(d.y - 0.42), 0.09);
+  return max(cord, max(bowl, rim));
+}
+// the whole hanging plant swings a little on its cord, from the hook
+vec2 swing(vec2 p, vec2 hook, float s){ return hook + rot(-s)*(p - hook); }
+float fern(vec2 p){
+  vec2 hook = vec2(0.12, 2.1), c = vec2(0.12, 1.42);
+  p = swing(p, hook, sin(time*0.35)*0.012 + gustSway(0.5)*0.03);
+  float b = hangPot(p, c, 0.13);
+  // fronds arch out over the rim and fall away under their own weight; each pinna small and many
+  for (int i = 0; i < 9; i++) {
+    float fi = float(i), h = hash(vec2(fi, 11.0));
+    // from out to the right round to out to the left; the outer ones start upward and arch over
+    float a = -mix(0.35, PI - 0.35, fi/8.0) + (fi < 0.5 ? 0.85 : fi > 7.5 ? -0.85 : 0.0)
+              + (h - 0.5)*0.25 + gustSway(fi*1.1)*0.12 + sin(time*0.7 + fi)*0.02;
+    float sc = 0.4 + 0.08*h;
+    vec2 base = c + vec2(cos(a)*0.09, 0.05);
+    // curl that bends each frond downward whichever way it points
+    b = max(b, frond((p - base)/sc, vec2(0.0), a, (0.5 + 0.3*h)/sc, 0.55*cos(a)));
+  }
+  return b;
+}
+// pothos: vines trail down from a pot, heart-shaped leaves along them, turning this way and that
+float heart(vec2 d){                      // a heart: two lobes at the top, its tip at y = -1
+  vec2 a = vec2(abs(d.x), d.y);
+  float lobe = step(length(a - vec2(0.36, 0.28)), 0.42);
+  float wedge = step(-1.0, d.y)*step(d.y, 0.35)*step(a.x, 0.74*(d.y + 1.0)/1.3);
+  return max(lobe, wedge);
+}
+float pothos(vec2 p){
+  vec2 hook = vec2(-0.05, 2.1), c = vec2(-0.05, 1.4);
+  p = swing(p, hook, sin(time*0.3)*0.01 + gustSway(0.2)*0.025);
+  float b = hangPot(p, c, 0.14);
+  for (int v = 0; v < 4; v++) {
+    float fv = float(v), x0 = c.x + (fv - 1.5)*0.075, len = 0.55 + 0.6*hash(vec2(fv, 4.0));
+    float y = c.y - p.y;                                   // how far down this vine
+    if (y < -0.05 || y > len + 0.12) continue;
+    float sway = (sin(time*0.6 + fv*1.9)*0.02 + gustSway(fv*1.7)*0.08)*y*y;
+    float vx = x0 + (fv - 1.5)*0.12*y + 0.035*sin(y*5.0 + fv*2.0) + sway;
+    b = max(b, step(abs(p.x - vx), 0.0035)*step(0.0, y)*step(y, len));
+    // the leaf nearest this height on either side of the vine
+    float sp = 0.11, k = floor(y/sp);
+    for (int j = -1; j <= 1; j++) {
+      float i = k + float(j), yl = (i + 0.5)*sp;
+      if (yl > len || yl < 0.06) continue;
+      float side = mod(i + fv, 2.0)*2.0 - 1.0, hh = hash(vec2(i, fv));
+      float lx = x0 + (fv - 1.5)*0.12*yl + 0.035*sin(yl*5.0 + fv*2.0) + (sin(time*0.6 + fv*1.9)*0.02 + gustSway(fv*1.7)*0.08)*yl*yl;
+      float sz = 0.04 + 0.025*hh*(1.0 - 0.4*yl/len);
+      // the tip points down and away from the vine
+      float th = -PI*0.5 + side*(0.55 + 0.45*hh) + sin(time*1.1 + i)*0.05 + gustSway(i*0.7)*0.3;
+      vec2 at = vec2(lx, c.y - yl) + vec2(cos(th), sin(th))*sz*1.05;
+      b = max(b, heart(rot(th + PI*0.5)*(p - at)/sz));
+    }
+  }
+  return b;
+}
+// bird of paradise: tall paddle leaves on long stalks, torn along their ribs, and one crane-headed flower
+float paddle(vec2 p, vec2 base, float ang, float stalk, float len, float wid, float seed){
+  vec2 d = rot(ang)*(p - base);
+  float st = step(abs(d.y), 0.008)*step(0.0, d.x)*step(d.x, stalk);
+  float x = (d.x - stalk)/len;
+  float w = wid*pow(max(sin(PI*clamp(x, 0.0, 1.0)), 0.0), 0.7);
+  float leaf = step(0.0, x)*step(x, 1.0)*step(abs(d.y), w);
+  // tears: thin gaps running from the edge in toward the midrib, slanting toward the tip
+  float t = (x*len - abs(d.y)*0.9)*14.0 + seed;
+  float tear = step(abs(fract(t) - 0.5), 0.05)*step(0.45 + 0.4*hash(vec2(floor(t), seed)), abs(d.y)/max(w, 1e-3))*step(0.5, hash(vec2(floor(t), seed + 3.0)));
+  return max(st, leaf*(1.0 - tear));
+}
+float birdOfParadise(vec2 p){
+  p.x += (sin(time*0.45)*0.008 + gustSway(p.y)*0.03)*max(p.y + 0.5, 0.0);
+  vec2 root = vec2(0.42, -0.5);
+  float b = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i), h = hash(vec2(fi, 21.0));
+    float ang = 1.2 + fi*0.17 + (h - 0.5)*0.12 + sin(time*0.7 + fi*1.3)*0.015 + gustSway(fi)*0.05;
+    float stalk = 0.75 + 0.35*h;
+    b = max(b, paddle(p, root, ang, stalk, 0.62 + 0.15*h, 0.13, fi*7.0));
+  }
+  // the flower: a long beak on its stalk with a crest of upright petals
+  vec2 fb = root + vec2(cos(1.75), sin(1.75))*1.05;
+  b = max(b, step(sdSeg(p, root, fb), 0.008));
+  vec2 d = p - fb;
+  float beak = step(sdSeg(d, vec2(0.0), vec2(0.26, 0.05)), 0.022*(1.0 - clamp(d.x/0.26, 0.0, 1.0)) + 0.004);
+  for (int k = 0; k < 3; k++) {
+    float fk = float(k);
+    vec2 a = vec2(0.05 + fk*0.04, 0.03), e = a + vec2(-0.03 + fk*0.05, 0.16 - fk*0.02);
+    beak = max(beak, step(sdSeg(d, a, e), 0.012*(1.0 - clamp(dot(d - a, e - a)/dot(e - a, e - a), 0.0, 1.0)) + 0.002));
+  }
+  return max(b, beak);
+}
+// string of pearls: strands of little round beads spilling over the rim of a hanging pot
+float pearls(vec2 p){
+  vec2 hook = vec2(0.2, 2.1), c = vec2(0.2, 1.38);
+  p = swing(p, hook, sin(time*0.33)*0.012 + gustSway(0.9)*0.03);
+  float b = hangPot(p, c, 0.11);
+  for (int v = 0; v < 9; v++) {
+    float fv = float(v), h = hash(vec2(fv, 31.0)), len = 0.25 + 0.75*h;
+    float y = c.y - 0.02 - p.y;
+    if (y < 0.0 || y > len + 0.02) continue;
+    float x0 = c.x + (fv - 4.0)*0.028;
+    float vx = x0 + (fv - 4.0)*0.02*y + 0.02*sin(y*7.0 + fv*1.3) + (sin(time*0.7 + fv)*0.015 + gustSway(fv*1.3)*0.06)*y*y;
+    b = max(b, step(abs(p.x - vx), 0.0015));
+    float sp = 0.032, i = floor(y/sp + 0.5);
+    float yc = i*sp;
+    if (yc > len) continue;
+    float vxc = x0 + (fv - 4.0)*0.02*yc + 0.02*sin(yc*7.0 + fv*1.3) + (sin(time*0.7 + fv)*0.015 + gustSway(fv*1.3)*0.06)*yc*yc;
+    float r = 0.0115*(0.85 + 0.3*hash(vec2(i, fv)));
+    b = max(b, step(length(vec2(p.x - vxc - 0.004*(hash(vec2(fv, i)) - 0.5), y - yc)), r));
+  }
+  return b;
+}
+// fiddle-leaf fig: a straight stem with big leaves, broad near the tip and pinched in the middle like a violin
+float fiddleLeaf(vec2 p, vec2 base, float ang, float sz){
+  vec2 d = rot(ang)*(p - base)/sz;
+  float x = d.x;
+  float w = 0.5*pow(clamp(x, 0.0, 1.0), 0.55)*sqrt(max(1.0 - x, 0.0))*(1.0 - 0.18*exp(-pow((x - 0.45)/0.12, 2.0))) + 0.01;
+  float vein = 1.0 - step(abs(d.y), 0.008)*step(0.05, x)*step(x, 0.85);
+  return step(0.0, x)*step(x, 1.0)*step(abs(d.y), w)*vein;
+}
+float fiddle(vec2 p){
+  p.x += (sin(time*0.5)*0.01 + gustSway(p.y*1.5)*0.035)*max(p.y + 0.3, 0.0);
+  float sx = 0.38;
+  float b = step(abs(p.x - sx - 0.02*sin(p.y*2.0)), 0.011)*step(p.y, 1.3)*step(-0.5, p.y);
+  for (int i = 0; i < 7; i++) {
+    float fi = float(i), y = 0.05 + fi*0.18, side = mod(fi, 2.0)*2.0 - 1.0, h = hash(vec2(fi, 41.0));
+    vec2 base = vec2(sx + 0.02*sin(y*2.0), y);
+    float th = PI*0.5 - side*(0.7 + 0.45*h) + sin(time*(0.7 + fi*0.1) + fi)*0.04 + gustSway(fi*1.4)*0.3;
+    b = max(b, fiddleLeaf(p, base, th, 0.42 + 0.08*h - 0.015*fi));
+  }
+  return b;
+}
 float foliage(vec2 p){
   if (plantType == 1) return ficus(p);
   if (plantType == 2) return monstera(p);
   if (plantType == 3) return palm(p);
+  if (plantType == 5) return fern(p);
+  if (plantType == 6) return pothos(p);
+  if (plantType == 7) return birdOfParadise(p);
+  if (plantType == 8) return pearls(p);
+  if (plantType == 9) return fiddle(p);
   return olive(p);
 }
 vec3 leafTint(){                        // light that gets through a leaf (green, faint; amber in autumn)

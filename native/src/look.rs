@@ -4,7 +4,7 @@ pub const STYLES: [&str; 24] = ["window", "blinds", "lattice", "georgian", "arch
     "mashrabiya", "girih", "sikri", "jharokha"];
 /// the historical windows start here in STYLES
 pub const HISTORIC: usize = 11;
-pub const PLANTS: [&str; 5] = ["none", "ficus", "monstera", "palm", "olive"];
+pub const PLANTS: [&str; 10] = ["none", "ficus", "monstera", "palm", "olive", "fern", "pothos", "paradise", "pearls", "fiddle"];
 /// a tree outside the window, far enough off that its gaps throw round little suns
 pub const TREES: [&str; 5] = ["none", "oak", "birch", "willow", "pine"];
 pub const MOODS: [&str; 8] = ["linen", "terracotta", "sage", "nocturne", "blush", "pewter", "overcast", "noir"];
@@ -93,7 +93,7 @@ impl Look {
     /// a random look; facing stays unless `facing` is given
     pub fn random(rng: &mut Rng, facing: Option<f64>, base: &Look) -> Look {
         let caustic = match rng.f() { x if x < 0.45 => 0, x if x < 0.65 => 1, x if x < 0.82 => 2, _ => 3 };
-        let plant = if rng.f() < 0.12 { 0 } else { 1 + rng.below(4) };
+        let plant = if rng.f() < 0.12 { 0 } else { 1 + rng.below(PLANTS.len() - 1) };
         Look {
             style: rng.below(STYLES.len()), plant, mood: rng.below(MOODS.len()), caustic,
             tilt: ((12.0 + rng.f() * 50.0) * if rng.f() < 0.5 { -1.0 } else { 1.0 }).round(), facing: facing.unwrap_or(base.facing).round(), rain: rng.f() < 0.15, prism: rng.f() < 0.3,
