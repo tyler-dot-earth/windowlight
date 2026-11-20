@@ -124,12 +124,19 @@
   .tile:active .pic { transform:scale(.96) }
   .tile.on { color:var(--sunhi) }
   .tile.on .pic { box-shadow:inset 0 0 0 1.5px #f4b860cc, 0 0 0 4px #f4b8601c, 0 10px 26px -8px #f4b86066 }
-  /* windows: their light, warmed, on a dark wall; the chosen one lights up */
-  .win .pic img { width:62%; height:auto; opacity:.5; filter:saturate(.6); transition:opacity .25s, filter .25s }
-  .win .pic::after { content:""; position:absolute; inset:0; background:#ffdcaa; mix-blend-mode:multiply; pointer-events:none }
-  .win:hover .pic img { opacity:.85 }
-  .win.on .pic { background:radial-gradient(110% 90% at 50% 30%, #3c2d1d, #1a1511) }
-  .win.on .pic img { opacity:1; filter:drop-shadow(0 0 6px #ffd08caa) }
+  /* windows: no box, just their light floating on the page; the chosen one glows */
+  .win .pic, .win:hover .pic, .win.on .pic { background:none; box-shadow:none; overflow:visible; border-radius:0 }
+  .win .pic img { width:66%; height:auto; opacity:.5; filter:sepia(.7) saturate(.9) brightness(.85);
+                  transition:opacity .35s, filter .35s }
+  .win .pic::before { content:""; position:absolute; inset:-16%; z-index:-1; pointer-events:none; opacity:0; transform:scale(.6);
+                      background:radial-gradient(closest-side, #f4b86050, #f4b86014 60%, transparent); filter:blur(5px);
+                      transition:opacity .5s, transform .5s var(--ease) }
+  .win:hover .pic img { opacity:.72 }
+  .win:hover .pic::before { opacity:.3; transform:scale(.8) }
+  .win.on .pic img { opacity:1; filter:sepia(.3) saturate(1.1) brightness(1.1) drop-shadow(0 0 4px #ffd08ccc) drop-shadow(0 0 14px #f4b86077) }
+  .win.on .pic::before { opacity:1; transform:scale(1); animation:breathe 6s ease-in-out infinite }
+  @keyframes breathe { 50% { opacity:.75; transform:scale(.94) } }
+  @media (prefers-reduced-motion:reduce) { .win.on .pic::before { animation:none } }
   /* plants: a patch of sun on the current wall, with the plant's shadow in it */
   .leaf .pic { background:radial-gradient(85% 85% at 45% 40%, color-mix(in srgb, var(--wall) 55%, #fff4dc), var(--wall) 55%, color-mix(in srgb, var(--wall) 45%, #000));
                filter:brightness(.5) saturate(.8); transition:filter .25s, box-shadow .2s, transform .2s var(--ease) }
