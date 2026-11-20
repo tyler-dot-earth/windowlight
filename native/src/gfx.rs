@@ -26,7 +26,7 @@ pub struct Target { pub tex: glow::Texture, pub fb: glow::Framebuffer, pub w: i3
 #[derive(Clone)]
 pub struct Frame {
     pub time: f32, pub style: i32, pub plant: i32, pub tree: i32, pub caustic: i32, pub material: i32, pub tilt: f32,
-    pub sun: [f32; 3], pub sun_alt: f32, pub mood: Mood, pub fade: f32,
+    pub sun: [f32; 3], pub sun_alt: f32, pub evening: f32, pub mood: Mood, pub fade: f32,
     pub rain: f32, pub gust: f32, pub cat: [f32; 4], pub light_k: f32,
     pub prism: f32, pub life: f32, pub shelf: f32, pub corner: f32, pub switch: f32, pub hook: f32, pub passing: [f32; 4], pub season: [f32; 4],
     /// from signals: birds (x, y, perched, beat) and how many, dust, frost, extra suncatcher turn
@@ -158,6 +158,7 @@ impl Renderer {
         gl.uniform_1_f32(u("tilt").as_ref(), f.tilt);
         gl.uniform_3_f32_slice(u("sun").as_ref(), &f.sun);
         gl.uniform_1_f32(u("sunAlt").as_ref(), f.sun_alt);
+        gl.uniform_1_f32(u("evening").as_ref(), f.evening);
         gl.uniform_1_f32(u("haze").as_ref(), f.mood.haze);
         gl.uniform_1_f32(u("rain").as_ref(), f.rain);
         gl.uniform_1_f32(u("gust").as_ref(), f.gust);

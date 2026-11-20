@@ -265,7 +265,7 @@ impl App {
         let l = &self.drawn;
         Frame {
             time: anim as f32, style: l.style as i32, plant: l.plant as i32, tree: l.tree as i32, caustic: l.caustic as i32, material: l.material as i32,
-            tilt: c.tilt.to_radians() as f32, sun: sun::room_vec(alt, az, c.facing), sun_alt: alt as f32,
+            tilt: c.tilt.to_radians() as f32, sun: sun::room_vec(alt, az, c.facing), sun_alt: alt as f32, evening: (sun::position(self.sim_ms(now) + 6e5, self.o.lat, self.o.lon).0 < alt) as i32 as f32,
             mood, fade: (self.fade.at(now) * self.lapse.map_or(1.0, |l| l.edge(now))) as f32,
             rain: rain as f32, gust: self.gust(now).max(0.75 * s.amount("wind")) as f32, cat: self.cat_vec(now), light_k: lk as f32,
             prism: c.prism.max((s.amount("suncatcher") * 5.0).min(1.0)) as f32, passing: self.passing.and_then(|p| p.at(now)).unwrap_or([0.0; 4]), season: self.season(now),
@@ -692,11 +692,40 @@ impl App {
                 self.warp_min = Tween { from: -70.0, to: 0.0, t0: now, dur: 3.2 };
                 "awake".into()
             }
+            "golden" => {
+                use chrono::TimeZone;
+                let ms = self.sim_ms(now);
+                let day = chrono::DateTime::from_timestamp_millis(ms as i64).unwrap().with_timezone(&chrono::Local).date_naive();
+                let day0 = chrono::Local.from_local_datetime(&day.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap().timestamp_millis() as f64;
+                let evening = match arg { "sunrise" | "morning" => false, "sunset" | "evening" => true, _ => sun::position(ms, self.o.lat, self.o.lon).0 > 0.0 && sun::position(ms + 6e5, self.o.lat, self.o.lon).0 < sun::position(ms, self.o.lat, self.o.lon).0 };
+                match golden(day0, self.o.lat, self.o.lon, evening) {
+                    Some((a, _)) => { self.lapse = None; self.o.lapse = None; self.jump_to(a, now); format!("golden hour from {}, in real time", self.clock(now)) }
+                    None => "no golden hour here today".into(),
+                }
+            }
             "now" => { self.lapse = None; self.o.lapse = None; self.jump_to(now_ms(), now); format!("following the real sun at {}", self.clock(now)) }
             "get" => match self.o.shuffle_secs { Some(s) => format!("{} --at {} (shuffling every {s:.0}s)", self.look.flags(), self.clock(now)), None => format!("{} --at {}", self.look.flags(), self.clock(now)) },
             _ => "commands: random [all] | set key=value ... (shuffle=20s|off, timelapse=day/2m|off, pool=all|favourites|historic, cat=10m|off, passing=4m|off, season=auto|spring|summer|autumn|winter) \
-                  | mood/material/style/plant/tree/caustic/tilt/facing/rain/prism/life/shelf/corner/switch/hook/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | bolt | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | now | sleep | wake | get | state".into(),
+                  | mood/material/style/plant/tree/caustic/tilt/facing/rain/prism/life/shelf/corner/switch/hook/lamp/season VALUE | keep | drop [N] | favs | fav N | cat | bird | car | bolt | gust [0..1] | air [NAME 0..1|curve [Y0 X1 Y1 X2 Y2]|auto] | signal NAME VALUE [ttl] | signals | golden [sunrise|sunset] | now | sleep | wake | get | state".into(),
         }
+    }
+}
+
+/// the golden hour and its twilight on the local day starting at `day0`: for sunrise from the sun 6 degrees
+/// under the horizon until it is 10 degrees up, for sunset the same backwards
+pub fn golden(day0: f64, lat: f64, lon: f64, evening: bool) -> Option<(f64, f64)> {
+    let alt = |i: usize| sun::position(day0 + i as f64 * 6e4, lat, lon).0.to_degrees();
+    let mins: Vec<usize> = (0..1440).collect();
+    let noon = *mins.iter().max_by(|a, b| alt(**a).total_cmp(&alt(**b)))?;
+    let (lo, hi) = (-6.0, 10.0);
+    if evening {
+        let a = (noon..1440).find(|i| alt(*i) < hi)?;
+        let b = (a..1440).find(|i| alt(*i) < lo).unwrap_or(1439);
+        Some((day0 + a as f64 * 6e4, day0 + b as f64 * 6e4))
+    } else {
+        let a = (0..noon).find(|i| alt(*i) > lo)?;
+        let b = (a..noon).find(|i| alt(*i) > hi).unwrap_or(noon);
+        Some((day0 + a as f64 * 6e4, day0 + b as f64 * 6e4))
     }
 }
 
@@ -709,7 +738,7 @@ pub struct Lapse { start_ms: f64, span_ms: f64, period: f64, t0: Instant }
 pub fn parse_lapse(spec: &str, ms: f64, lat: f64, lon: f64) -> Result<Option<Lapse>, String> {
     use chrono::TimeZone;
     if spec == "off" { return Ok(None); }
-    let bad = || format!("timelapse wants day/2m, full/5m, 07:00-18:00/90s or off, not {spec}");
+    let bad = || format!("timelapse wants day/2m, sunset/1m, sunrise/1m, full/5m, 07:00-18:00/90s or off, not {spec}");
     let (range, dur) = spec.split_once('/').ok_or_else(bad)?;
     let period = parse_secs(dur).flatten().ok_or_else(bad)?;
     let day = chrono::DateTime::from_timestamp_millis(ms as i64).unwrap().with_timezone(&chrono::Local).date_naive();
@@ -720,6 +749,7 @@ pub fn parse_lapse(spec: &str, ms: f64, lat: f64, lon: f64) -> Result<Option<Lap
     };
     let (a, b) = match range {
         "full" => (0.0, 86.4e6),
+        "sunrise" | "sunset" => match golden(day0, lat, lon, range == "sunset") { Some((a, b)) => (a - day0, b - day0), None => return Err("no golden hour here today".into()) },
         "day" => {
             // first and last minute with the sun up, padded 25 minutes for the twilight on each side
             let up: Vec<f64> = (0..1440).map(|i| i as f64 * 6e4).filter(|t| sun::position(day0 + t, lat, lon).0 > 0.0).collect();

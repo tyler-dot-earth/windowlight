@@ -567,8 +567,14 @@ void main(){
   }
 
   float day = smoothstep(-0.10, 0.06, sunAlt);
-  float twi = exp(-pow((sunAlt + 0.03)/0.07, 2.0));
-  vec3 amb = mix(0.04*mix(nightTint, vec3(0.6), 0.4), ambAmt*shadeTint, day) + twi*vec3(0.05, 0.03, 0.065)*ambAmt*5.0;
+  // twilight: just after sunset the sky still glows peach and rose where the sun went down; then, with the
+  // sun 4 to 8 degrees under, the blue hour, deep blue from ozone soaking up the last of the reds
+  float twi = exp(-pow((sunAlt + 0.05)/0.075, 2.0));
+  vec3 twiC = mix(vec3(0.065, 0.04, 0.045), vec3(0.022, 0.034, 0.085), smoothstep(-0.03, -0.1, sunAlt));
+  vec3 amb = mix(0.04*mix(nightTint, vec3(0.6), 0.4), ambAmt*shadeTint, day) + twi*twiC*ambAmt*5.0;
+  // with the sun low, the shade is lit by a blue sky while the sun has gone gold: shadows cool as the light warms
+  float gold = smoothstep(0.21, 0.03, sunAlt)*step(0.0, sunAlt);
+  amb *= mix(vec3(1.0), vec3(0.86, 0.94, 1.16), 0.6*gold);
   amb *= 0.72 + 0.5*smoothstep(-1.4, 1.2, uv.x);
   vec3 col = wall*amb;
   // a drifting seed, seen against the wall in the room's own light
@@ -596,7 +602,7 @@ void main(){
     }
     vec3 pcw = vec3(pc, 0.0); vec3 hc = pcw + (D_PLANT - dot(n, pcw))/ns*L;
     qp -= (vec2(dot(ua, hc), hc.y) - WC)*0.8;
-    float hz = 1.0 + 7.0*haze;
+    float hz = sunSoft() + 7.0*haze;
     float pen = (0.004 + 0.004*tw)*hz;
     vec3 lit = softAp(q, pen)*shim;
     float litM = clamp(dot(lit, vec3(0.3333)), 0.0, 1.0);
@@ -635,7 +641,7 @@ void main(){
     if (flockN > 0) trans *= flockT(q - WC, planeQ(p, pcw, n, ua, L, ns, 1.25, 0.8), pen, (0.003 + 0.004*(1.25 - D_WIN)/ns)*hz);
     if (season.x + season.z > 0.02) trans *= fallT(planeQ(p, pcw, n, ua, L, ns, 0.85, 0.4), (0.003 + 0.004*(0.85 - D_WIN)/ns)*hz);
     float E = isSun ? 1.7*(1.0 - 0.62*haze) : 0.32;
-    float strength = E*smoothstep(0.0, 0.08, alt)*lightK;
+    float strength = E*(isSun ? sunLevel(alt)*sunDisc(alt) : smoothstep(0.0, 0.08, alt))*lightK;
     vec3 lc = isSun ? sunColor(alt)*sunTint : mix(nightTint, vec3(0.8, 0.84, 0.92), 0.55);
     gLc = lc; gStr = strength; gTSh = tShade;
     float flat_ = max(L.z, 0.0);
@@ -913,7 +919,7 @@ void main(){
   // the corner, the skirting and the floor: the side wall and the floor only show left of the corner line
   // and below the skirting's top. Four rays a pixel on the boards and along the edges, one on the plain wall
   if (corner > 0.01 && (uv.x < XC + 2.0*ph || uv.y < FY + SK_H + 2.0*ph)) {
-    float hz = 1.0 + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
+    float hz = sunSoft() + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
     vec3 lampI = max(col - colSun, 0.0)/max(wall, vec3(0.05));
     vec3 acc = vec3(0.0); float h;
     int nk = (abs(uv.x - XC) < 3.0*ph || uv.y < FY + SK_H + 3.0*ph) ? 4 : 1;
@@ -925,7 +931,7 @@ void main(){
   }
   // the shelf, four rays a pixel near it so its edges stay clean
   if (shelf > 0.01 && uv.x > SH_X.x - 0.12 && uv.x < SH_X.y + 0.12 && uv.y > SH_Y.x - 0.08 && uv.y < MI_C.y + MI_R + 0.06) {
-    float hz = 1.0 + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
+    float hz = sunSoft() + 7.0*haze; vec3 pcw = vec3(pc, 0.0);
     vec3 lampI = max(col - colSun, 0.0)/max(wall, vec3(0.05));
     vec3 acc = vec3(0.0);
     for (int k = 0; k < 4; k++) {
@@ -937,6 +943,10 @@ void main(){
 
   float vig = 1.0 - 0.38*pow(length((sc - 0.5)*vec2(1.0, 1.2))*1.25, 2.0);
   col *= vig*expo*fade;
+  // in dim light the eye leans on its rods, which see no colour and favour blue-green (the Purkinje shift):
+  // dark corners at dusk and at night go cool and grey, while anything lamp-lit keeps its colour
+  float lumP = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, lumP*vec3(0.72, 0.92, 1.2), 0.45*smoothstep(0.02, -0.12, sunAlt)*(1.0 - smoothstep(0.004, 0.06, lumP)));
   col = aces(col);
   col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, sat);
   col = pow(col, vec3(1.0/2.2));

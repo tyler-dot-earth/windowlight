@@ -10,6 +10,7 @@ uniform int caustic;    // 0 none 1 pool 2 glass 3 both
 uniform float tilt;     // window plane angle against the wall, radians
 uniform vec3 sun;       // toward the sun, room frame
 uniform float sunAlt;
+uniform float evening;   // 1 after solar noon
 uniform float haze;
 uniform float rain;      // 0..1 drops on the glass
 uniform float gust;      // 0..1 extra wind, kicked by desktop activity
@@ -974,13 +975,28 @@ vec3 carafe(vec2 l, float pen){
   return mix(vec3(1.0), T, inside);
 }
 
-vec3 sunColor(float a){                 // linear colour of direct sun by altitude (radians)
-  float d = a*57.2958;
-  vec3 c0 = vec3(1.0, 0.30, 0.10), c1 = vec3(1.0, 0.56, 0.26), c2 = vec3(1.0, 0.82, 0.62), c3 = vec3(1.0, 0.94, 0.86);
-  if (d < 5.0) return mix(c0, c1, d/5.0);
-  if (d < 18.0) return mix(c1, c2, (d - 5.0)/13.0);
-  return mix(c2, c3, clamp((d - 18.0)/27.0, 0.0, 1.0));
+// sunlight after its path through the air, at 680, 550 and 440 nm. The path length is the Kasten & Young (1989)
+// air mass; along it air molecules scatter blue away (Rayleigh, as 1/wavelength^4), haze and smoke dim all colours
+// a little less unevenly (aerosol, Angstrom exponent 1.3), and high ozone takes a bite out of the middle.
+// The eye is taken as adapted to the noon sun, so the colour is relative to one air mass
+float airMass(float a){ float h = max(a*57.2958, -0.5); return 1.0/(sin(h/57.2958) + 0.50572*pow(h + 6.07995, -1.6364)); }
+vec3 skyTrans(float a, float turb){
+  float m = airMass(a) - 1.0, mo = min(airMass(a), 12.0) - 1.0;
+  vec3 tR = vec3(0.042, 0.099, 0.245), tA = (0.03 + 0.16*turb)*vec3(0.67, 0.88, 1.18), tO = vec3(0.015, 0.03, 0.003);
+  return exp(-m*(tR + tA) - mo*tO);
 }
+float turbidity(){ return clamp(0.15 + 0.6*haze + 0.25*evening, 0.0, 1.2); }   // evening air holds the day's dust
+vec3 sunColor(float a){                  // linear colour of direct sun by altitude (radians), brightest channel 1
+  vec3 t = skyTrans(a, turbidity());
+  return pow(t/max(t.r, 1e-4), vec3(0.75));   // and partly adapts to the warm light too
+}
+// how bright the sun is next to noon, after the eye has partly adapted, and how much of its disc clears the
+// skyline (taken 1 degree up, less half a degree the air lifts it by refraction)
+float sunLevel(float a){ return pow(dot(skyTrans(a, turbidity()), vec3(0.2126, 0.7152, 0.0722)), 0.28); }
+float sunDisc(float a){ float x = clamp((a*57.2958 - 0.5)/0.267, -1.0, 1.0); return 1.0 - (acos(x) - x*sqrt(1.0 - x*x))/3.14159265; }
+// the sun's share of shadow softness: as the disc sinks behind the skyline only a thin sliver is left to
+// cast them, and the shadows go sharp and red in the last minute
+float sunSoft(){ return sunAlt > 0.0 ? mix(0.35, 1.0, smoothstep(0.0, 0.7, sunDisc(sunAlt))) : 1.0; }
 
 // tileable plaster: the noise lattice wraps every TILE wall units, so it bakes into one repeating texture
 // gradient noise, so no square lattice shows through in raking light; 0..1 like value noise

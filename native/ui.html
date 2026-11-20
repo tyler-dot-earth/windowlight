@@ -360,7 +360,8 @@
         <div class="settings">
           <label>shuffle every<select id="shuffle"><option>off</option><option>10s</option><option>20s</option><option>1m</option><option>5m</option><option>15m</option></select></label>
           <label>shuffle from<select id="pool"><option value="all">everything</option><option value="favourites">favourites</option><option value="historic">historic windows</option></select></label>
-          <label>time-lapse<select id="timelapse"><option value="off">off</option><option value="day/1m">a day in 1 min</option><option value="day/2m">a day in 2 min</option><option value="day/5m">a day in 5 min</option><option value="full/5m">a full day in 5 min</option></select></label>
+          <label>time-lapse<select id="timelapse"><option value="off">off</option><option value="day/1m">a day in 1 min</option><option value="day/2m">a day in 2 min</option><option value="day/5m">a day in 5 min</option><option value="full/5m">a full day in 5 min</option><option value="sunrise/1m">sunrise in 1 min</option><option value="sunset/1m">sunset in 1 min</option><option value="sunset/3m">sunset in 3 min</option></select></label>
+          <label>golden hour<select id="golden"><option value="">jump to…</option><option value="sunrise">this morning's</option><option value="sunset">this evening's</option><option value="now">back to now</option></select></label>
           <label>birds and cars every<select id="passevery"><option>off</option><option>1m</option><option>4m</option><option>15m</option></select></label>
           <label>cat every<select id="catevery"><option>off</option><option>2m</option><option>10m</option><option>30m</option><option>1h</option></select></label>
         </div>
@@ -610,6 +611,7 @@ const secs = s => s == null ? 'off' : s % 3600 == 0 ? s / 3600 + 'h' : s % 60 ==
 const pickSel = (e, v) => { if (![...e.options].some(o => o.value == v)) e.add(new Option(v, v)); e.value = v; };
 $('shuffle').onchange = e => send('set shuffle=' + e.target.value);
 $('pool').onchange = e => send('set pool=' + e.target.value);
+$('golden').onchange = e => { const v = e.target.value; if (v) send(v == 'now' ? 'now' : 'golden ' + v); e.target.value = ''; };
 $('timelapse').onchange = e => send(e.target.value == 'off' ? 'now' : 'set timelapse=' + e.target.value);
 $('catevery').onchange = e => send('set cat=' + e.target.value);
 $('passevery').onchange = e => send('set passing=' + e.target.value);
