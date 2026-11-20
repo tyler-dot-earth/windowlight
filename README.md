@@ -23,7 +23,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 
 - Slow parts are baked into textures: the plaster once, the window shape when the style or angle changes, and the leaves and pool ripples at a small size each frame. The full-resolution pass only does a handful of texture lookups per pixel; soft shadow edges come from blurrier mip levels
 - Cost at 3840x2160 on the RX 7800 XT: 0.6 to 1.4 ms per frame offscreen (worst is olive plus both caustics), about 4% of the card at 30 fps and 9% at 60. Live on DP-2 at 30 fps the desktop's GPU load stayed in the same 5 to 10% range it shows without it
-- `native/wl.sh` builds it with nix tools (cargo cache stays in the folder) and runs it:
+- `native/wl.sh` builds it inside the flake's dev shell (cargo cache stays in the folder) and runs it:
   - `./wl.sh run --plant olive --caustic both` draws on the first monitor (`--output NAME` picks one, `--fps 30`, `--scale 0.5` for a cheaper half-resolution buffer)
   - `./wl.sh run --workspaces linen,sage,nocturne,terracotta` follows niri and fades the mood when the active workspace on that output changes
   - `./wl.sh run --random` picks a look at start, and `--shuffle 20s` (or `5m`, `1h`) crossfades to a new random look on that interval; `ctl set shuffle=10s` or `shuffle=off` changes it while running
@@ -53,7 +53,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - It comes about every 10 minutes at random, starting a minute or three after launch.
   - `--cat 30m` or `--cat off` changes that, and `ctl cat` calls it now.
 - Favourites:
-  - `ctl keep` saves the current look to `native/favourites.txt`, and `ctl drop` removes it.
+  - `ctl keep` saves the current look to `~/.config/windowlight/favourites.txt`, and `ctl drop` removes it.
   - `ctl favs` lists them, and `ctl fav 3` shows one, turned toward the light if it would be dark as saved.
   - `--pool favourites` (or `ctl set pool=favourites`) makes shuffles draw only from them.
 - Transitions replace the crossfade:
@@ -99,7 +99,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Anything can drive the window by dropping a small file in `$XDG_RUNTIME_DIR/windowlight/signals/`, named after the signal:
   - `{"level": 0.4, "state": "busy", "label": "what it is", "ttl": 15}`, every field optional;
   - or just `0.4`, or just a state word: `quiet`, `busy`, `waiting`, `done` or `alert`.
-- `native/signals.map` says which behaviour each signal drives, one `pattern behaviour [from..to]` per line; it reloads on save.
+- `native/signals.map` says which behaviour each signal drives, one `pattern behaviour [from..to]` per line. It is built into the binary; a copy at `~/.config/windowlight/signals.map` overrides it and reloads on save.
   - Any signal can drive any of: `birds`, `wind`, `dust`, `frost`, `haze`, `rain`, `shade`, `suncatcher`, `passing` or `cat`.
   - Every behaviour takes a level, and reacts when a signal turns done or alert or jumps past 75%.
   - `from..to` uses part of a level: `disk frost 0.8..1` frosts the glass only past 80% full.
@@ -122,3 +122,10 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Now the plaster bakes as height only at 4096 per tile (2048 texels per wall unit, finer than 4K draws it), in the same memory as before.
 - The slope is taken per screen pixel when drawing, and the noise is gradient noise, so no grid shows.
 - The live wallpaper picks the first monitor unless `--output NAME` names one; `run.sh` (the old glpaper path) now needs the output name.
+
+## Setup with Nix
+
+- `nix develop` opens a dev shell with Rust, clippy, jq, Node, glpaper and Chromium, plus the GL and Wayland libraries on `LD_LIBRARY_PATH`. `wl.sh`, `run.sh` and `shot.sh` enter it themselves.
+- `nix build` (or `nix run . -- run`) builds a packaged `windowlight` plus `windowlight-adapter-herdr` and `windowlight-adapter-system`, with nothing tied to this checkout.
+- Your own settings live in `~/.config/windowlight/`: `favourites.txt`, and `signals.map` if you want a different mapping. `WINDOWLIGHT_FAVS` and `WINDOWLIGHT_SIGNAL_MAP` point elsewhere.
+- Linux and Wayland only; the wallpaper needs a compositor with layer-shell, and workspace moods and breeze need niri.

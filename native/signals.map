@@ -1,5 +1,8 @@
 # windowlight signal map: which behaviour of the window each signal drives.
 #
+# This copy is built into windowlight. To change it, copy it to ~/.config/windowlight/signals.map
+# (or point $WINDOWLIGHT_SIGNAL_MAP at a file); that file reloads on save.
+#
 #   signal-pattern   behaviour   [from..to]
 #
 # A pattern is a signal name, with * matching anything. A signal can appear on several lines, and several

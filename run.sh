@@ -4,6 +4,7 @@
 # cheap default: 10 fps rendered at 1280x720 (about 1% GPU on the RX 7800-class card), upscaled to the monitor
 set -euo pipefail
 cd "$(dirname "$0")"
+[[ -z ${IN_NIX_SHELL:-} ]] && exec nix develop . --command ./run.sh "$@"
 out=${1:?usage: ./run.sh OUTPUT [gen-glpaper args], e.g. ./run.sh DP-1}; shift
 node gen-glpaper.mjs "$@" > windowlight.frag
-exec nix run nixpkgs#glpaper -- "$out" windowlight.frag --fps "${FPS:-10}" -W "${W:-1280}" -H "${H:-720}"
+exec glpaper "$out" windowlight.frag --fps "${FPS:-10}" -W "${W:-1280}" -H "${H:-720}"

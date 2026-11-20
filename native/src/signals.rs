@@ -119,8 +119,10 @@ pub fn default_dir() -> String {
         format!("{run}/windowlight/signals")
     })
 }
+/// the default map ships inside the binary; a file at the config path (or $WINDOWLIGHT_SIGNAL_MAP) overrides it
+pub const BUILTIN_MAP: &str = include_str!("../signals.map");
 pub fn default_map() -> String {
-    std::env::var("WINDOWLIGHT_SIGNAL_MAP").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/signals.map").into())
+    std::env::var("WINDOWLIGHT_SIGNAL_MAP").unwrap_or_else(|_| crate::app::config_file("signals.map"))
 }
 
 /// write a signal file the way a source would (used by `ctl signal`); atomic, so readers never see half
@@ -240,6 +242,7 @@ impl Signals {
         self.map_stamp = stamp;
         match std::fs::read_to_string(&self.map_path) {
             Ok(t) => { let (r, e) = parse_map(&t); self.rules = r; self.map_errs = e; }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => { let (r, e) = parse_map(BUILTIN_MAP); self.rules = r; self.map_errs = e; }
             Err(e) => { self.rules = vec![]; self.map_errs = vec![format!("{}: {e}", self.map_path)]; }
         }
         for e in &self.map_errs { eprintln!("windowlight signals: {e}"); }

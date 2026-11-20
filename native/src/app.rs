@@ -146,8 +146,14 @@ pub fn now_ms() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as f64
 }
 
+/// $XDG_CONFIG_HOME/windowlight/NAME, or ~/.config/windowlight/NAME
+pub fn config_file(name: &str) -> String {
+    let base = std::env::var("XDG_CONFIG_HOME").ok().filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("{}/.config", std::env::var("HOME").unwrap_or_else(|_| ".".into())));
+    format!("{base}/windowlight/{name}")
+}
 pub fn favs_path() -> String {
-    std::env::var("WINDOWLIGHT_FAVS").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/favourites.txt").into())
+    std::env::var("WINDOWLIGHT_FAVS").unwrap_or_else(|_| config_file("favourites.txt"))
 }
 pub fn load_favs() -> Vec<String> {
     std::fs::read_to_string(favs_path()).unwrap_or_default().lines().map(|l| l.trim().to_string())
@@ -156,7 +162,9 @@ pub fn load_favs() -> Vec<String> {
 fn save_favs(f: &[String]) -> Result<(), String> {
     let mut s = String::from("# windowlight favourites, one look per line (keep / drop add and remove them)\n");
     for l in f { s.push_str(l); s.push('\n'); }
-    std::fs::write(favs_path(), s).map_err(|e| format!("{}: {e}", favs_path()))
+    let p = favs_path();
+    if let Some(d) = std::path::Path::new(&p).parent() { let _ = std::fs::create_dir_all(d); }
+    std::fs::write(&p, s).map_err(|e| format!("{}: {e}", favs_path()))
 }
 
 /// favourites match whatever way the window faces, since that gets re-aimed at the light
