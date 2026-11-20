@@ -113,6 +113,7 @@
 
   /* tiles: the window and plant pictures are the buttons */
   .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(74px, 1fr)); gap:12px 8px }
+  #style, #styleh { grid-template-columns:repeat(auto-fill, minmax(118px, 1fr)); gap:18px 10px }
   .tile { border:0; padding:0; background:none; display:flex; flex-direction:column; gap:7px; color:var(--dim); font-size:12px; text-align:center;
           min-width:0; transition:color .15s }
   .tile .lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -126,7 +127,7 @@
   .tile.on .pic { box-shadow:inset 0 0 0 1.5px #f4b860cc, 0 0 0 4px #f4b8601c, 0 10px 26px -8px #f4b86066 }
   /* windows: no box, just their light floating on the page; the chosen one glows */
   .win .pic, .win:hover .pic, .win.on .pic { background:none; box-shadow:none; overflow:visible; border-radius:0 }
-  .win .pic img { width:66%; height:auto; opacity:.5; filter:sepia(.7) saturate(.9) brightness(.85);
+  .win .pic img { width:80%; height:auto; opacity:.5; filter:sepia(.7) saturate(.9) brightness(.85);
                   transition:opacity .35s, filter .35s }
   .win .pic::before { content:""; position:absolute; inset:-16%; z-index:-1; pointer-events:none; opacity:0; transform:scale(.6);
                       background:radial-gradient(closest-side, #f4b86050, #f4b86014 60%, transparent); filter:blur(5px);
@@ -150,7 +151,7 @@
   .paint .pic { aspect-ratio:1.25; background:radial-gradient(70% 80% at 72% 28%, #fff5 , transparent 70%), var(--c) }
   .paint .pic::before { content:""; position:absolute; inset:0; background:linear-gradient(180deg, transparent 55%, #0003) }
   .walls { grid-template-columns:repeat(auto-fill, minmax(70px, 1fr)) }
-  @media (max-width:560px) { .tiles, .walls { grid-template-columns:repeat(auto-fill, minmax(62px, 1fr)); gap:10px 6px } section { padding:18px 16px 20px } }
+  @media (max-width:560px) { .tiles, .walls { grid-template-columns:repeat(auto-fill, minmax(62px, 1fr)); gap:10px 6px } #style, #styleh { grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)) } section { padding:18px 16px 20px } }
 
   /* lamps, in kinds; each has a small light of its own colour, and flames flicker */
   #lamp { display:flex; flex-wrap:wrap; gap:14px 18px }
