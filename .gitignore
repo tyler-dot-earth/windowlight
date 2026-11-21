@@ -9,3 +9,4 @@ shots/
 *.webm
 *.bundle
 .direnv/
+windowlight.frag
