@@ -1,6 +1,6 @@
-# windowlight (spike)
+# windowlight
 
-Throwaway spike: sunlight through a window onto a wall as a live niri wallpaper, following the real sun. Inspired by Sunstill (a Mac app), built from scratch.
+Sunlight through a window onto a wall as a live niri wallpaper, following the real sun. Inspired by [Sunstill](https://sunstill.app/), a Mac app; built from scratch.
 
 - `index.html` is the shader and sun math in one file. Open it in a browser with `?ui=1` for a time slider and pickers, or `?speed=3600` for a time-lapse
   - `style`: window, blinds, lattice, georgian, arch, shutters, sheer
