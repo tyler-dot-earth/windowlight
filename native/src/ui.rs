@@ -46,6 +46,7 @@ fn handle(mut s: TcpStream, port: u16, tx: &Sender<Cmd>) -> std::io::Result<()> 
     if !ok_hosts.contains(&host) { return reply(&mut s, "403 Forbidden", "text/plain", "wrong host"); }
     let mut parts = first.split_whitespace();
     let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+    let path = path.split_once('?').map_or(path, |(p, _)| p);   // the page keeps its look in the query; the server ignores it
     match (method, path) {
         ("GET", "/") => reply(&mut s, "200 OK", "text/html; charset=utf-8", PAGE),
         ("GET", "/land.txt") => reply(&mut s, "200 OK", "text/plain", LAND),

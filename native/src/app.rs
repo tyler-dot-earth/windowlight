@@ -162,6 +162,10 @@ pub fn config_file(name: &str) -> String {
         .unwrap_or_else(|| format!("{}/.config", std::env::var("HOME").unwrap_or_else(|_| ".".into())));
     format!("{base}/windowlight/{name}")
 }
+fn look_json(l: &Look) -> serde_json::Value {
+    serde_json::json!({ "style": STYLES[l.style], "plant": PLANTS[l.plant], "tree": TREES[l.tree], "mood": MOODS[l.mood], "material": MATERIALS[l.material], "caustic": CAUSTICS[l.caustic],
+        "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism, "life": l.life, "shelf": l.shelf, "corner": l.corner, "switch": l.switch, "hook": l.hook, "pinhole": l.pinhole, "lamp": LAMPS[l.lamp] })
+}
 pub fn favs_path() -> String {
     std::env::var("WINDOWLIGHT_FAVS").unwrap_or_else(|_| config_file("favourites.txt"))
 }
@@ -403,8 +407,7 @@ impl App {
         let hex = |c: [f32; 3]| format!("#{:02x}{:02x}{:02x}", (c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
         let walls: Vec<String> = (0..MOODS.len()).map(|i| hex(Mood::named(i).wall)).collect();
         serde_json::json!({
-            "look": { "style": STYLES[l.style], "plant": PLANTS[l.plant], "tree": TREES[l.tree], "mood": MOODS[l.mood], "material": MATERIALS[l.material], "caustic": CAUSTICS[l.caustic],
-                      "tilt": l.tilt, "facing": l.facing, "rain": l.rain, "prism": l.prism, "life": l.life, "shelf": l.shelf, "corner": l.corner, "switch": l.switch, "hook": l.hook, "pinhole": l.pinhole, "lamp": LAMPS[l.lamp] },
+            "look": look_json(l), "defaults": look_json(&Look::default()),
             "flags": l.flags(), "clock": self.clock(now), "asleep": self.asleep || self.fade.to == 0.0,
             "shuffle": self.o.shuffle_secs, "timelapse": self.o.lapse, "pool": self.o.pool,
             "cat": self.o.cat_secs, "cat_now": self.cat.is_some(), "passing": self.o.pass_secs,

@@ -650,11 +650,41 @@ function parseFlags(line) {
   return o;
 }
 
+// the look lives in the address too (?window=arch&plant=fern…), leaving out whatever is at its default,
+// so a link or bookmark brings the same look back; "window" is the URL's name for style
+const URLKEY = { style: 'window' }, urlKey = k => URLKEY[k] || k;
+const urlVal = v => v === true ? 'on' : v === false ? 'off' : typeof v == 'number' ? String(Math.round(v)) : String(v);
+let urlReady = false;
+function urlSync() {
+  if (!urlReady || !st.defaults) return;
+  const q = new URLSearchParams();
+  const order = ['style', 'mood', 'material', 'plant', 'tree', 'lamp', 'caustic'];
+  const keys = Object.keys(st.look).sort((a, b) => ((order.indexOf(a) + 1) || 99) - ((order.indexOf(b) + 1) || 99));
+  for (const [k, v] of keys.map(k => [k, st.look[k]])) if (urlVal(v) != urlVal(st.defaults[k])) q.set(urlKey(k), urlVal(v));
+  if (st.season != 'auto') q.set('season', st.season);
+  const s = q.toString(), want = location.pathname + (s ? '?' + s : '') + location.hash;
+  if (want != location.pathname + location.search + location.hash) history.replaceState(null, '', want);
+}
+// opening a URL with settings applies them once: anything the URL leaves out goes back to its default
+async function fromURL() {
+  const q = new URLSearchParams(location.search);
+  if ([...q.keys()].length) {
+    try {
+      const s = await (await fetch('/state')).json(), d = s.defaults || {}, set = {};
+      for (const k of Object.keys(d)) set[k] = urlVal(d[k]);
+      set.season = 'auto';
+      for (const [k, v] of q) { const key = k == 'window' ? 'style' : k; if (key in set) set[key] = v; }
+      await send('set ' + Object.entries(set).map(([k, v]) => `${k}=${v}`).join(' '));
+    } catch {}
+  }
+  urlReady = true;
+}
+
 async function poll() {
   try { st = await (await fetch('/state')).json(); }
   catch { $('status').replaceChildren(el('span', 'pill off', 'not running')); return; }
   const L = st.look, C = st.choices;
-  globeSync();
+  urlSync(); globeSync();
   document.documentElement.style.setProperty('--wall', C.mood_wall[C.mood.indexOf(L.mood)] || '#d1b79b');
 
   // header
@@ -1068,6 +1098,6 @@ function globe() {
     $('wherename').textContent = placeName(O.lat, O.lon); wake();
   });
 }
-poll(); setInterval(poll, 1500); shot(); glyphs(); globe();
+fromURL().then(poll); setInterval(poll, 1500); shot(); glyphs(); globe();
 </script>
 </body></html>

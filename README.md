@@ -53,7 +53,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - It comes about every 10 minutes at random, starting a minute or three after launch.
   - `--cat 30m` or `--cat off` changes that, and `ctl cat` calls it now.
 - Favourites:
-  - `ctl keep` saves the current look to `~/.config/windowlight/favourites.txt`, and `ctl drop` removes it. The wallpaper starts from the newest saved look (turned toward the light if it would be dark), and any look flags you pass still win.
+  - `ctl keep` saves the current look to `~/.config/windowlight/favourites.txt`, and `ctl drop` removes it. The control page keeps the look in its address (`?window=arch&mood=sage&plant=fern`, leaving out anything at its default), so a bookmark or shared link brings it back: opening one applies it, and settings it leaves out go back to their defaults. The wallpaper starts from the newest saved look (turned toward the light if it would be dark), and any look flags you pass still win.
   - `ctl favs` lists them, and `ctl fav 3` shows one, turned toward the light if it would be dark as saved.
   - `--pool favourites` (or `ctl set pool=favourites`) makes shuffles draw only from them.
 - Transitions replace the crossfade:
