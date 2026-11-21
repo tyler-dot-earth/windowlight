@@ -147,6 +147,8 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 
 ## Round ten: a tidier control page
 
+<img width="480" alt="The full control page: preview, place, favourites, timing, window and room pickers, light, air and signals" src="https://github.com/user-attachments/assets/9ce57060-3b2e-46ae-9e95-457a57de3a01" />
+
 - The control page opens on a live preview of the wallpaper, a 640×360 still the app renders on request (`ctl preview` returns it as base64 PNG) and refreshes every 4 seconds.
 - Shuffle, keep and sleep sit under the preview, with cat, birds, car and breeze below them.
 - Window, room and light controls are grouped into their own cards. Wall moods show their colour, and facing reads as a compass direction.
