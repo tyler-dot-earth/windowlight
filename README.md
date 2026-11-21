@@ -201,3 +201,11 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - `nix build` (or `nix run . -- run`) builds a packaged `windowlight` plus `windowlight-adapter-herdr` and `windowlight-adapter-system`, with nothing tied to this checkout.
 - Your own settings live in `~/.config/windowlight/`: `favourites.txt`, and `signals.map` if you want a different mapping. `WINDOWLIGHT_FAVS` and `WINDOWLIGHT_SIGNAL_MAP` point elsewhere.
 - Linux and Wayland only; the wallpaper needs a compositor with layer-shell, and workspace moods and breeze need niri.
+
+## Credits and references
+
+- Sun and moon positions follow [SunCalc](https://github.com/mourner/suncalc) by Vladimir Agafonkin (BSD 2-Clause), which takes its formulas from Louis Strous's [Astronomy Answers](https://aa.quae.nl/en/reken/zonpositie.html). The globe on the control page places the sun with the U.S. Naval Observatory's [approximate solar coordinates](https://aa.usno.navy.mil/faq/sun_approx).
+- Air mass for golden hour: F. Kasten and A. T. Young, "Revised optical air mass tables and approximation formula," *Applied Optics* 28(22), 4735–4738, 1989. [doi:10.1364/AO.28.004735](https://doi.org/10.1364/AO.28.004735)
+- Haze colour uses Ångström's power law for aerosol extinction: A. Ångström, "On the atmospheric transmission of sun radiation and on dust in the air," *Geografiska Annaler* 11(2), 156–166, 1929. Rayleigh optical depths are close to A. Bucholtz, "Rayleigh-scattering calculations for the terrestrial atmosphere," *Applied Optics* 34(15), 2765–2773, 1995.
+- Tone mapping is Krzysztof Narkowicz's fit of the ACES filmic curve: ["ACES Filmic Tone Mapping Curve"](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/), 2016.
+- Plaster noise uses the quintic fade from K. Perlin, "Improving Noise," *ACM Transactions on Graphics* 21(3), 681–682, 2002 (SIGGRAPH). Luminance weights are ITU-R BT.709.
