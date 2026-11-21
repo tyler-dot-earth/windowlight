@@ -150,6 +150,8 @@ pub struct App {
     spin: f64, last_t: Instant,
     /// the lamp last switched on, so it can fade out after the look says none
     last_lamp: usize,
+    /// a stepped clock for recording; None follows the real one
+    pub clock: Option<Instant>,
 }
 
 pub fn now_ms() -> f64 {
@@ -207,7 +209,7 @@ impl App {
             fade: Tween::still(1.0), warp_min: Tween::still(0.0), asleep: false,
             rng: Rng::seeded(), last_shuffle: now, lapse: None,
             gust_from: 0.0, gust_peak: 0.0, gust_t0: now, cat: None, next_cat: now, passing: None, next_pass: now, bolt: None, next_bolt: now + Duration::from_secs(20), jump: None,
-            sig: Signals::new(o.signals.clone(), o.signal_map.clone()), spin: 0.0, last_t: now, last_lamp: o.look.lamp, o,
+            sig: Signals::new(o.signals.clone(), o.signal_map.clone()), spin: 0.0, last_t: now, last_lamp: o.look.lamp, clock: None, o,
         };
         // the first cat comes along a minute or three in, then about every --cat
         a.next_cat = now + Duration::from_secs_f64(60.0 + a.rng.f() * 120.0);
@@ -221,7 +223,7 @@ impl App {
     pub unsafe fn free(self, r: &Renderer) { r.drop_scene(self.cur); }
 
     pub fn set_lapse(&mut self, spec: &str) -> Result<(), String> {
-        self.lapse = parse_lapse(spec, self.sim_ms(Instant::now()), self.o.lat, self.o.lon)?;
+        self.lapse = parse_lapse(spec, self.sim_ms(self.now()), self.o.lat, self.o.lon)?;
         self.o.lapse = self.lapse.map(|_| spec.to_string());
         Ok(())
     }
@@ -324,8 +326,10 @@ impl App {
         self.look = next;
     }
 
+    fn now(&self) -> Instant { self.clock.unwrap_or_else(Instant::now) }
+
     pub unsafe fn render(&mut self, r: &Renderer, fb: Option<glow::Framebuffer>, w: i32, h: i32) {
-        let now = Instant::now();
+        let now = self.now();
         if let Some(m) = self.o.shuffle_secs {
             if secs(now, self.last_shuffle) > m { self.command(r, "random all"); }
         }
@@ -464,7 +468,7 @@ impl App {
 
     /// handle one control line; returns the reply
     pub unsafe fn command(&mut self, r: &Renderer, line: &str) -> String {
-        let now = Instant::now();
+        let now = self.now();
         let mut words = line.split_whitespace();
         let cmd = words.next().unwrap_or("");
         let rest: Vec<&str> = words.collect();

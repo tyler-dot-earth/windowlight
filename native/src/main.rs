@@ -213,6 +213,20 @@ fn main() {
                             a.render(r, Some(c.fb), hw, hh);
                             std::thread::sleep(std::time::Duration::from_millis(33));
                         }
+                    } else if let Some(rest) = line.strip_prefix("record ") {
+                        // "record DIR SECONDS [FPS]": numbered frames on a stepped clock, so motion stays even
+                        // however long each frame takes to write; later commands keep to that clock
+                        let mut w = rest.split_whitespace();
+                        let (Some(dir), Some(secs)) = (w.next(), w.next().and_then(|s| s.parse::<f64>().ok())) else { println!("record wants DIR SECONDS [FPS]"); continue };
+                        let fps = w.next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(30.0);
+                        std::fs::create_dir_all(dir).unwrap();
+                        let first = std::fs::read_dir(dir).map_or(0, |d| d.count());
+                        let step = std::time::Duration::from_secs_f64(1.0 / fps);
+                        for i in 0..(secs * fps).round() as usize {
+                            a.clock = Some(a.clock.unwrap_or_else(Instant::now) + step);
+                            a.render(r, Some(c.fb), hw, hh);
+                            write_png(&format!("{dir}/{:05}.png", first + i), hw, hh, &r.read_rgb(&c));
+                        }
                     } else if let Some(p) = line.strip_prefix("shot ") {
                         a.render(r, Some(c.fb), hw, hh);
                         write_png(p.trim(), hw, hh, &r.read_rgb(&c));

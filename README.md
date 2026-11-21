@@ -61,7 +61,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
   - A new window, plant or caustic waits behind a passing cloud: the light fades and softens, the scene swaps while it's dark, and the light comes back (about 3.5 s).
   - A shuffle that has to jump the clock to a sunny moment also hides the jump behind the cloud.
 - Cost at 4K is still small: 1.1 to 1.8 ms per frame. Rain and a walking cat redraw the window texture each frame, which adds about 0.5 ms.
-- `./wl.sh headless --ui 7899 --breeze on` is the offscreen test driver. It serves the page and follows niri while it `wait`s, and `--size` sets its shot size.
+- `./wl.sh headless --ui 7899 --breeze on` is the offscreen test driver. It serves the page and follows niri while it `wait`s, and `--size` sets its shot size. It takes one command per line; `record DIR SECONDS [FPS]` writes numbered frames on a clock that steps one frame at a time (30 fps unless given), so crossfades stay smooth for video however slowly frames save. For example, `printf 'record v 3\nstyle arch\nrecord v 5\n' | ./wl.sh headless --size 1920x1080`, then `ffmpeg -framerate 30 -i v/%05d.png -pix_fmt yuv420p out.mp4`.
 
 ## native (round six)
 
