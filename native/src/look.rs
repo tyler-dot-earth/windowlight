@@ -59,7 +59,7 @@ impl Mood {
 pub struct Look { pub style: usize, pub plant: usize, pub mood: usize, pub caustic: usize, pub tilt: f64, pub facing: f64, pub rain: bool, pub prism: bool, pub lamp: usize, pub material: usize, pub tree: usize, pub life: bool, pub shelf: bool, pub corner: bool, pub switch: bool, pub hook: bool, pub pinhole: bool }
 
 impl Default for Look {
-    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false, lamp: 0, material: 0, tree: 0, life: false, shelf: false, corner: false, switch: true, hook: true, pinhole: false } }
+    fn default() -> Self { Look { style: 1, plant: 1, mood: 0, caustic: 0, tilt: 32.0, facing: 180.0, rain: false, prism: false, lamp: 0, material: 0, tree: 0, life: false, shelf: false, corner: false, switch: false, hook: false, pinhole: false } }
 }
 
 fn pick(list: &[&str], v: &str) -> Result<usize, String> {

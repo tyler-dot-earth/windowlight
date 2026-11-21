@@ -38,9 +38,10 @@ fn parse_at(s: &str) -> f64 {
     chrono::Local.from_local_datetime(&ndt).earliest().expect("local time").timestamp_millis() as f64
 }
 
-struct Cli { opts: Opts, pos: Vec<String>, random: bool, frames: usize, size_set: bool, headless_ui: Option<u16>, headless_breeze: bool }
+struct Cli { saved: Option<usize>, opts: Opts, pos: Vec<String>, random: bool, frames: usize, size_set: bool, headless_ui: Option<u16>, headless_breeze: bool }
 
-fn parse(args: &[String]) -> Cli {
+/// `saved`: start from the newest kept look (the live wallpaper does); flags still override it
+fn parse(args: &[String], saved: bool) -> Cli {
     let mut o = Opts {
         lat: 37.77, lon: -122.42, look: Look::default(), speed: 1.0, at_ms: None, anim: 0.0,
         fps: 30.0, scale: 1.0, output: String::new(), workspaces: vec![], shuffle_secs: None, size: (1920, 1080), lapse: None,
@@ -48,6 +49,9 @@ fn parse(args: &[String]) -> Cli {
         signals: Some(signals::default_dir()), signal_map: signals::default_map(),
     };
     if let Some((lat, lon)) = app::load_place() { (o.lat, o.lon) = (lat, lon); }
+    let favs = if saved { app::load_favs() } else { vec![] };
+    let from = favs.iter().enumerate().rev().find_map(|(i, f)| Look::from_flags(f).map(|l| (i, l)));
+    if let Some((_, l)) = &from { o.look = l.clone(); }
     let (mut pos, mut random, mut frames, mut size_set) = (vec![], false, 120, false);
     let mut i = 0;
     while i < args.len() {
@@ -101,7 +105,8 @@ fn parse(args: &[String]) -> Cli {
     // only the live wallpaper serves the page by default; the headless driver serves it when --ui is given
     let headless_ui = args.iter().any(|a| a == "--ui").then_some(o.ui_port).flatten();
     let headless_breeze = args.windows(2).any(|w| w[0] == "--breeze" && w[1] != "off");
-    Cli { opts: o, pos, random, frames, size_set, headless_ui, headless_breeze }
+    let saved = from.map(|(i, _)| i + 1).filter(|_| !args.iter().any(|a| a == "--facing"));
+    Cli { saved, opts: o, pos, random, frames, size_set, headless_ui, headless_breeze }
 }
 
 fn write_png(path: &str, w: i32, h: i32, rgb: &[u8]) {
@@ -125,13 +130,19 @@ fn main() {
         }
         return;
     }
-    let mut cli = parse(&args[1..]);
+    let live = mode == "run" || (mode == "headless" && args.iter().any(|a| a == "--ui"));
+    let mut cli = parse(&args[1..], live);
     let mut rng = Rng::seeded();
     if cli.random {
         let ms = cli.opts.at_ms.unwrap_or_else(app::now_ms);
         let f = sunny_facing(&mut rng, ms, &cli.opts);
         cli.opts.look = Look::random(&mut rng, Some(f), &cli.opts.look);
         eprintln!("look: {}", cli.opts.look.flags());
+    } else if let Some(n) = cli.saved {
+        // the newest kept look; the window turns toward the light if it would be dark as saved, like `fav N`
+        let ms = cli.opts.at_ms.unwrap_or_else(app::now_ms);
+        if !sun::lets_in(ms, cli.opts.lat, cli.opts.lon, cli.opts.look.facing) { cli.opts.look.facing = sunny_facing(&mut rng, ms, &cli.opts).round(); }
+        eprintln!("look: kept look {n}: {}", cli.opts.look.flags());
     }
     match mode.as_str() {
         "run" => wl::run(cli.opts),
