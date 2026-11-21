@@ -2,6 +2,23 @@
 
 Sunlight through a window onto a wall as a live niri wallpaper, following the real sun. Inspired by [Sunstill](https://sunstill.app/), a Mac app; built from scratch.
 
+https://github.com/user-attachments/assets/8a6702ef-cda6-410d-bef5-19e270005876
+
+<p>
+  <img width="32%" alt="Persian window with a birch outside and a carafe caustic" src="https://github.com/user-attachments/assets/aa59bc7c-8dd5-48fe-99d2-e7a6d1a5988c" />
+  <img width="32%" alt="Arched window and monstera on terracotta zellige" src="https://github.com/user-attachments/assets/545a3e9c-ab26-410f-a86b-e4816e24de95" />
+  <img width="32%" alt="Mashrabiya screen with pool light rippling on linen" src="https://github.com/user-attachments/assets/9f74e6e9-be4d-4ffe-9444-d381b9ef7f1f" />
+  <img width="32%" alt="Stained glass on limewash" src="https://github.com/user-attachments/assets/34158f44-ed7d-485a-a4e2-264fd2d07d93" />
+  <img width="32%" alt="Pinhole blind projecting the view outside onto the wall" src="https://github.com/user-attachments/assets/6fdbe437-e41f-46e7-92fd-1b9472d008dc" />
+  <img width="32%" alt="Blinds in the rain with a neon sign, nocturne walls" src="https://github.com/user-attachments/assets/63587f43-a8cb-41ed-a6e2-2d8cbffab62b" />
+  <img width="32%" alt="Shoji at golden hour on sage" src="https://github.com/user-attachments/assets/ae39dd4f-28d6-4b1b-8958-80b268b495f1" />
+  <img width="32%" alt="Lattice window at golden hour" src="https://github.com/user-attachments/assets/954a7c01-65e5-49e0-91c4-18f108687909" />
+  <img width="32%" alt="Night by firelight on brick with a shelf" src="https://github.com/user-attachments/assets/880b4e90-f491-450f-bc6f-1006c33efc6b" />
+  <img width="32%" alt="Jali screen in the morning on sage stucco" src="https://github.com/user-attachments/assets/2260a594-c403-477c-aca1-015d30503fbe" />
+  <img width="32%" alt="Moon window on concrete with the room corner" src="https://github.com/user-attachments/assets/edba6381-5c5e-413b-8081-95ad1878a9e4" />
+  <img width="32%" alt="Blinds and ficus on sage" src="https://github.com/user-attachments/assets/d196e9cb-10c7-4d4d-9b29-1ed4500762af" />
+</p>
+
 - `index.html` is the shader and sun math in one file. Open it in a browser with `?ui=1` for a time slider and pickers, or `?speed=3600` for a time-lapse
   - `style`: window, blinds, lattice, georgian, arch, shutters, sheer
   - `plant`: none, ficus, monstera, palm, olive
@@ -104,7 +121,7 @@ Location defaults to 37.77, -122.42 as a Pacific-time stand-in; pass your real l
 - Anything can drive the window by dropping a small file in `$XDG_RUNTIME_DIR/windowlight/signals/`, named after the signal:
   - `{"level": 0.4, "state": "busy", "label": "what it is", "ttl": 15}`, every field optional;
   - or just `0.4`, or just a state word: `quiet`, `busy`, `waiting`, `done` or `alert`.
-- `native/signals.map` says which behaviour each signal drives, one `pattern behaviour [from..to]` per line. It is built into the binary; a copy at `~/.config/windowlight/signals.map` overrides it and reloads on save.
+- `native/signals.map` says which behaviour each signal drives, one `pattern behaviour [from..to]` per line. It is built into the binary; a copy at `~/.config/windowlight/signals.map` overrides it and reloads on save. The control page lists the signal folder and map, with your home folder shown as `~`.
   - Any signal can drive any of: `birds`, `wind`, `dust`, `frost`, `haze`, `rain`, `shade`, `suncatcher`, `passing` or `cat`.
   - Every behaviour takes a level, and reacts when a signal turns done or alert or jumps past 75%.
   - `from..to` uses part of a level: `disk frost 0.8..1` frosts the glass only past 80% full.

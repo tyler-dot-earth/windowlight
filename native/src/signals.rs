@@ -123,6 +123,13 @@ pub fn default_dir() -> String {
 }
 /// the default map ships inside the binary; a file at the config path (or $WINDOWLIGHT_SIGNAL_MAP) overrides it
 pub const BUILTIN_MAP: &str = include_str!("../signals.map");
+/// a path as the page shows it, with the home folder as ~
+fn tilde(p: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() && h != "/" && p.starts_with(&h) && p[h.len()..].starts_with('/') => format!("~{}", &p[h.len()..]),
+        _ => p.to_string(),
+    }
+}
 pub fn default_map() -> String {
     std::env::var("WINDOWLIGHT_SIGNAL_MAP").unwrap_or_else(|_| crate::app::config_file("signals.map"))
 }
@@ -388,7 +395,7 @@ impl Signals {
 
     pub fn state(&self) -> serde_json::Value {
         serde_json::json!({
-            "dir": self.dir, "map": self.map_path, "errors": self.map_errs,
+            "dir": self.dir.as_deref().map(tilde), "map": tilde(&self.map_path), "errors": self.map_errs,
             "rules": self.rules.iter().map(|r| format!("{} {}", r.pat, r.behaviour)).collect::<Vec<_>>(),
             "live": self.live.iter().map(|s| serde_json::json!({ "name": s.name, "label": s.label, "level": (s.level * 100.0).round() / 100.0,
                 "state": s.state.name(), "drives": self.behaviours_of(&s.name) })).collect::<Vec<_>>(),
